@@ -20,10 +20,10 @@ export const ProjectCardPanel: React.FC<ProjectCardPanelProps> = ({
   screenshotUrl,
 }) => {
   return (
-    <div className="h-full flex flex-col overflow-y-auto bg-rv-bg p-6 gap-5 select-text">
+    <div className="h-full flex flex-col overflow-y-auto bg-rv-surface p-6 gap-5 select-text">
       {/* Screenshot / Media placeholder */}
       {screenshotUrl ? (
-        <div className="flex-1 min-h-40 border border-rv-border rounded-lg overflow-hidden bg-rv-surface">
+        <div className="flex-1 min-h-40 border border-rv-border rounded-lg overflow-hidden bg-rv-bg">
           <img
             className="w-full h-full object-contain bg-rv-surface2 block"
             src={screenshotUrl}
@@ -31,15 +31,15 @@ export const ProjectCardPanel: React.FC<ProjectCardPanelProps> = ({
           />
         </div>
       ) : (
-        <div className="flex-1 min-h-24 border border-rv-border rounded-lg overflow-hidden bg-rv-surface2 flex items-center justify-center text-rv-dim text-sm">
+        <div className="min-h-28 border border-dashed border-rv-border rounded-lg bg-rv-surface2 flex items-center justify-center text-rv-dim text-sm">
           No screenshot submitted
         </div>
       )}
 
       {/* Title + Track / Type Badge */}
-      <div className="shrink-0">
-        <div className="flex items-center gap-3 mb-2">
-          <h2 className="text-2xl font-bold m-0 leading-tight text-rv-text">
+      <div className="shrink-0 space-y-2">
+        <div className="flex items-center gap-3">
+          <h2 className="text-xl font-bold m-0 leading-tight text-rv-text">
             {projectTitle || 'Untitled Project'}
           </h2>
           <span className="shrink-0 text-xs font-semibold uppercase tracking-wide px-2.5 py-1 rounded bg-rv-surface2 border border-rv-border text-rv-dim font-mono">
@@ -48,7 +48,7 @@ export const ProjectCardPanel: React.FC<ProjectCardPanelProps> = ({
         </div>
 
         {projectDescription ? (
-          <p className="text-sm text-rv-dim m-0 leading-relaxed whitespace-pre-wrap">
+          <p className="text-sm text-rv-text m-0 leading-relaxed whitespace-pre-wrap bg-rv-bg p-3 rounded border border-rv-border">
             {projectDescription}
           </p>
         ) : (
@@ -57,15 +57,15 @@ export const ProjectCardPanel: React.FC<ProjectCardPanelProps> = ({
       </div>
 
       {/* Links Rows */}
-      <div className="shrink-0 flex flex-col gap-2.5 pt-2 border-t border-rv-border">
+      <div className="shrink-0 flex flex-col gap-2 pt-2 border-t border-rv-border">
         {demoUrl && (
           <div className="flex items-center gap-2.5 text-sm">
-            <span className="text-rv-dim font-semibold w-16 shrink-0 text-[13px]">Demo</span>
+            <span className="text-rv-dim font-semibold w-16 shrink-0 text-xs uppercase">Demo</span>
             <a
               href={demoUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-rv-blue truncate hover:underline text-[13px] font-mono"
+              className="text-rv-blue truncate hover:underline text-xs font-mono font-medium"
             >
               {demoUrl}
             </a>
@@ -73,12 +73,12 @@ export const ProjectCardPanel: React.FC<ProjectCardPanelProps> = ({
         )}
         {codeUrl && (
           <div className="flex items-center gap-2.5 text-sm">
-            <span className="text-rv-dim font-semibold w-16 shrink-0 text-[13px]">Code</span>
+            <span className="text-rv-dim font-semibold w-16 shrink-0 text-xs uppercase">Code</span>
             <a
               href={codeUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-rv-blue truncate hover:underline text-[13px] font-mono"
+              className="text-rv-blue truncate hover:underline text-xs font-mono font-medium"
             >
               {codeUrl}
             </a>
@@ -86,12 +86,12 @@ export const ProjectCardPanel: React.FC<ProjectCardPanelProps> = ({
         )}
         {readmeUrl && (
           <div className="flex items-center gap-2.5 text-sm">
-            <span className="text-rv-dim font-semibold w-16 shrink-0 text-[13px]">README</span>
+            <span className="text-rv-dim font-semibold w-16 shrink-0 text-xs uppercase">README</span>
             <a
               href={readmeUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-rv-blue truncate hover:underline text-[13px] font-mono"
+              className="text-rv-blue truncate hover:underline text-xs font-mono font-medium"
             >
               {readmeUrl}
             </a>

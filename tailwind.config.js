@@ -7,24 +7,24 @@ export default {
   theme: {
     extend: {
       colors: {
-        /* Exact Horizons Reviewer Design Tokens */
-        'rv-bg': '#1c1c1c',
-        'rv-surface': '#242424',
-        'rv-surface2': '#2e2e2e',
-        'rv-border': '#3a3a3a',
-        'rv-text': '#e0e0e0',
-        'rv-dim': '#8892a4',
-        'rv-accent': '#f5a623',
-        'rv-green': '#4caf50',
-        'rv-green-bg': 'rgba(76, 175, 80, 0.12)',
-        'rv-red': '#ef5350',
-        'rv-red-bg': 'rgba(239, 83, 80, 0.12)',
-        'rv-blue': '#42a5f5',
-        'rv-tag-bg': 'rgba(245, 166, 35, 0.15)',
-        'rv-divider': 'rgba(255, 255, 255, 0.06)',
+        /* Crisp Horizons Light Theme Tokens */
+        'rv-bg': '#f5f5f5',
+        'rv-surface': '#ffffff',
+        'rv-surface2': '#eaeaea',
+        'rv-border': '#d0d0d0',
+        'rv-text': '#1a1a1a',
+        'rv-dim': '#6b7280',
+        'rv-accent': '#d4890a',
+        'rv-green': '#2e7d32',
+        'rv-green-bg': 'rgba(46, 125, 50, 0.1)',
+        'rv-red': '#c62828',
+        'rv-red-bg': 'rgba(198, 40, 40, 0.1)',
+        'rv-blue': '#1976d2',
+        'rv-tag-bg': 'rgba(212, 137, 10, 0.12)',
+        'rv-divider': 'rgba(0, 0, 0, 0.08)',
       },
       fontFamily: {
-        sans: ['Inter', 'sans-serif'],
+        sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
       }
     },
   },

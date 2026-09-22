@@ -1,18 +1,20 @@
 import { useState, useEffect, useMemo } from 'react';
-import { SubmissionParams, GitHubRepoData, HackatimeProjectStats } from './lib/types';
-import { fetchGitHubRepoData, fetchHackatimeData } from './lib/api';
+import { SubmissionParams, GitHubRepoData, HackatimeProjectStats, ManifestLookupData } from './lib/types';
+import { fetchGitHubRepoData, fetchHackatimeData, fetchManifestLookup } from './lib/api';
 import { validatePlayableUrl } from './lib/linkParser';
 import { VerdictState } from './lib/verdict';
 
-// Horizons Reviewer Components
+// Components
 import { TopBar } from './components/TopBar';
 import { UserInfo } from './components/UserInfo';
 import { TabBar, Tab } from './components/TabBar';
 import { ReadmePanel } from './components/ReadmePanel';
+import { CommitsPanel } from './components/CommitsPanel';
 import { DemoIframe } from './components/DemoIframe';
 import { ProjectCardPanel } from './components/ProjectCardPanel';
 import { VerdictPanel } from './components/VerdictPanel';
 import { GitHubPanel } from './components/GitHubPanel';
+import { ManifestPanel } from './components/ManifestPanel';
 import { ReviewChecklist } from './components/ReviewChecklist';
 
 // Presets for real-world and test submissions
@@ -22,7 +24,7 @@ const PRESETS: Array<{
   params: SubmissionParams;
 }> = [
   {
-    name: '⚡ Real Case: SysPulse (doomk)',
+    name: 'SysPulse (doomk) - Real Submission',
     badge: 'Real Test',
     params: {
       codeUrl: 'https://github.com/be-the-root/syspulse',
@@ -37,7 +39,22 @@ const PRESETS: Array<{
     }
   },
   {
-    name: '🎮 Web Game (Software)',
+    name: 'Custom Macropad (Hardware Track)',
+    badge: 'Hardware',
+    params: {
+      codeUrl: 'https://github.com/qcoral/hackpad-orpheus',
+      playableUrl: 'https://github.com/qcoral/hackpad-orpheus',
+      track: 'hardware',
+      hours: '14.0',
+      hackatimeId: '12890',
+      project: '',
+      lapseLinks: 'https://api.lapse.hackclub.com/timelapse/demo1',
+      recordId: 'recDemoPad003',
+      description: 'An ergonomic 9-key macropad with rotary encoder designed in KiCad with custom PCB.'
+    }
+  },
+  {
+    name: 'Web Game (Software Track)',
     badge: 'Software',
     params: {
       codeUrl: 'https://github.com/hackclub/live',
@@ -52,22 +69,7 @@ const PRESETS: Array<{
     }
   },
   {
-    name: '⌨️ Custom Macropad (Hardware)',
-    badge: 'Hardware',
-    params: {
-      codeUrl: 'https://github.com/qcoral/hackpad-orpheus',
-      playableUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
-      track: 'hardware',
-      hours: '14.0',
-      hackatimeId: '12890',
-      project: '',
-      lapseLinks: 'https://api.lapse.hackclub.com/timelapse/demo1',
-      recordId: 'recDemoPad003',
-      description: 'An ergonomic 9-key macropad with rotary encoder designed in KiCad with custom PCB.'
-    }
-  },
-  {
-    name: '📹 Messy Links (Hardware)',
+    name: 'Messy Links Submission (Hardware)',
     badge: 'Hardware',
     params: {
       codeUrl: 'https://github.com/hackclub/sprig',
@@ -82,7 +84,7 @@ const PRESETS: Array<{
     }
   },
   {
-    name: '🚨 Streamlit Prohibited Host',
+    name: 'Streamlit Disallowed Host Violation',
     badge: 'Blocked',
     params: {
       codeUrl: 'https://github.com/streamlit/streamlit',
@@ -96,13 +98,6 @@ const PRESETS: Array<{
       description: 'Interactive data visualization dashboard.'
     }
   }
-];
-
-const CENTER_TABS: Tab[] = [
-  { id: 'readme', label: 'Readme' },
-  { id: 'demo', label: 'Demo' },
-  { id: 'card', label: 'Project Card' },
-  { id: 'verdict', label: 'Verdict' },
 ];
 
 export default function App() {
@@ -124,6 +119,12 @@ export default function App() {
   // Client-side fetched data (zero credentials)
   const [repoData, setRepoData] = useState<Partial<GitHubRepoData>>({ isLoading: false });
   const [hackatimeData, setHackatimeData] = useState<Partial<HackatimeProjectStats>>({ isLoading: false });
+  const [manifestData, setManifestData] = useState<ManifestLookupData>({
+    isLoading: false,
+    isRegistered: false,
+    otherSubmissions: [],
+    halceonUrl: 'https://lin6bu84s73ya069zkua89ny.halceon.dev/'
+  });
 
   // Center tab state
   const [activeTab, setActiveTab] = useState<string>('readme');
@@ -137,7 +138,7 @@ export default function App() {
 
   // Verdict state
   const [verdict, setVerdict] = useState<VerdictState>({
-    decision: 'needs_changes',
+    decision: 'approve',
     approvedHours: '',
     selectedChips: [],
     customNotes: ''
@@ -181,9 +182,9 @@ export default function App() {
     const p = PRESETS[index].params;
     setParams(p);
     setVerdict({
-      decision: p.playableUrl === p.codeUrl ? 'needs_changes' : 'approve',
+      decision: p.playableUrl === p.codeUrl && p.track !== 'hardware' ? 'adjust_hours' : 'approve',
       approvedHours: p.hours,
-      selectedChips: p.playableUrl === p.codeUrl ? ['Playable URL is identical to GitHub source code repo (Criterion #10)'] : [],
+      selectedChips: [],
       customNotes: ''
     });
     setCheckedChecklistItems([]);
@@ -197,14 +198,21 @@ export default function App() {
     window.history.replaceState({}, '', `${window.location.pathname}?${search.toString()}`);
   };
 
-  // Fetch GitHub and Hackatime public data when URLs or IDs change
+  // Fetch GitHub, Hackatime, and Manifest data when URLs or IDs change
   useEffect(() => {
     let cancelled = false;
 
     if (params.codeUrl) {
       setRepoData({ isLoading: true });
       fetchGitHubRepoData(params.codeUrl).then((res) => {
-        if (!cancelled) setRepoData(res);
+        if (!cancelled) {
+          setRepoData(res);
+          // Query Manifest for double-dipping
+          setManifestData(prev => ({ ...prev, isLoading: true }));
+          fetchManifestLookup(params.codeUrl, res.owner || '').then((m) => {
+            if (!cancelled) setManifestData(m);
+          });
+        }
       });
     } else {
       setRepoData({ isLoading: false });
@@ -244,41 +252,51 @@ export default function App() {
     (!params.playableUrl) ||
     (playableValidation.isCodeDuplicate && !isHardware && !hasReleases)
   );
-  
+
   const blockerMessage = playableValidation.isProhibitedHost
-    ? 'Prohibited Hosting Platform'
+    ? 'Prohibited Hosting Platform (Streamlit)'
     : (!params.playableUrl)
     ? 'Missing Playable URL'
     : (playableValidation.isCodeDuplicate && !isHardware && !hasReleases)
-    ? 'CRITICAL: Playable URL is Source Code'
+    ? 'Playable URL points to Source Code (No binaries or web deploy)'
     : undefined;
+
+  // Dynamic center tabs with commit count badge
+  const centerTabs: Tab[] = [
+    { id: 'readme', label: 'Readme' },
+    { id: 'commits', label: 'Commits', badge: repoData.commits?.length || 0 },
+    { id: 'demo', label: 'Demo / Deliverables' },
+    { id: 'card', label: 'Project Card' },
+    { id: 'verdict', label: 'Verdict' },
+  ];
 
   return (
     <div className="font-sans bg-rv-bg text-rv-text h-screen flex flex-col overflow-hidden select-none">
-      {/* 1. Horizons TopBar */}
+      
+      {/* 1. Horizons TopBar (Light Theme) */}
       <TopBar
         currentIndex={currentPresetIndex}
-        totalCount={PRESETS.length}
-        onNext={() => loadPreset(currentPresetIndex + 1)}
-        onPrev={() => loadPreset(currentPresetIndex - 1)}
         presets={PRESETS}
         onSelectPreset={loadPreset}
+        recordId={params.recordId}
         isBlocker={isPlayableBlocked}
         blockerMessage={blockerMessage}
       />
 
-      {/* 2. Horizons Exact 3-Column Review Grid */}
+      {/* 2. Horizons 3-Column Review Grid [300px_1fr_320px] */}
       <div className="grid grid-cols-[300px_1fr_320px] flex-1 overflow-hidden">
         
-        {/* LEFT PANEL */}
+        {/* LEFT PANEL: Real Submitter Info & Actions */}
         <div className="bg-rv-surface border-r border-rv-border overflow-y-auto">
           <UserInfo
-            displayName={hackatimeData.username || 'Be The Root'}
-            slackUserId={params.hackatimeId ? `U${params.hackatimeId}` : undefined}
+            displayName={hackatimeData.username || repoData.owner || 'Submitter'}
+            githubOwner={repoData.owner}
             repoUrl={params.codeUrl || null}
             playableUrl={params.playableUrl || null}
             readmeUrl={params.codeUrl ? `${params.codeUrl}/blob/main/README.md` : null}
+            hasReleases={hasReleases}
             submittedHours={parseFloat(params.hours) || 0}
+            hackatimeTotalHours={hackatimeData.totalHoursReadable}
             track={params.track}
             projectNote={projectNote}
             onProjectNoteChange={setProjectNote}
@@ -287,17 +305,19 @@ export default function App() {
           />
         </div>
 
-        {/* CENTER PANEL */}
-        <div className="flex flex-col overflow-hidden">
-          {/* Exact Horizons TabBar */}
+        {/* CENTER PANEL: Tabbed Workspace */}
+        <div className="flex flex-col overflow-hidden bg-white">
+          {/* Horizons TabBar */}
           <TabBar
-            tabs={CENTER_TABS}
+            tabs={centerTabs}
             activeTab={activeTab}
             onTabChange={(id) => setActiveTab(id)}
           />
 
           {/* Tab Views */}
           <div className="flex-1 overflow-hidden relative">
+            
+            {/* 1. Readme Tab (Rendered with marked) */}
             <div className={`absolute inset-0 ${activeTab !== 'readme' ? 'hidden' : ''}`}>
               <ReadmePanel
                 markdown={repoData.readmeContent || ''}
@@ -305,6 +325,16 @@ export default function App() {
               />
             </div>
 
+            {/* 2. Dedicated Commits Tab with Diffs & Files */}
+            <div className={`absolute inset-0 ${activeTab !== 'commits' ? 'hidden' : ''}`}>
+              <CommitsPanel
+                commits={repoData.commits || []}
+                repoUrl={params.codeUrl || null}
+                loading={repoData.isLoading}
+              />
+            </div>
+
+            {/* 3. Demo / Deliverables Tab */}
             <div className={`absolute inset-0 flex flex-col ${activeTab !== 'demo' ? 'hidden' : ''}`}>
               <DemoIframe
                 demoUrl={params.playableUrl || null}
@@ -316,17 +346,19 @@ export default function App() {
               />
             </div>
 
+            {/* 4. Project Card Tab */}
             <div className={`absolute inset-0 ${activeTab !== 'card' ? 'hidden' : ''}`}>
               <ProjectCardPanel
                 projectTitle={params.project || repoData.repo || 'Project'}
                 projectDescription={params.description}
-                projectType={params.track === 'hardware' ? 'Hardware' : 'CLI Tool / Python'}
+                projectType={params.track === 'hardware' ? 'Hardware' : (hasReleases ? 'Desktop / CLI Binary' : 'CLI Tool / Python')}
                 demoUrl={params.playableUrl || null}
                 codeUrl={params.codeUrl || null}
                 readmeUrl={params.codeUrl ? `${params.codeUrl}/blob/main/README.md` : null}
               />
             </div>
 
+            {/* 5. Verdict Tab */}
             <div className={`absolute inset-0 ${activeTab !== 'verdict' ? 'hidden' : ''}`}>
               <VerdictPanel
                 recordId={params.recordId}
@@ -336,14 +368,20 @@ export default function App() {
                 onVerdictChange={setVerdict}
               />
             </div>
+
           </div>
         </div>
 
-        {/* RIGHT PANEL */}
-        <div className="bg-rv-surface border-l border-rv-border flex flex-col overflow-hidden">
+        {/* RIGHT PANEL: GitHub Stats + Double-Dipping + Checklist */}
+        <div className="bg-rv-surface border-l border-rv-border flex flex-col overflow-y-auto">
           <GitHubPanel
             repo={repoData}
             repoUrl={params.codeUrl || null}
+          />
+
+          <ManifestPanel
+            manifest={manifestData}
+            codeUrl={params.codeUrl}
           />
 
           <ReviewChecklist

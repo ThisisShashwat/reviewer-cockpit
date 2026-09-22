@@ -1,6 +1,6 @@
 /**
  * Core type definitions for Reviewer Cockpit
- * All types are designed for zero-credential client-side operation.
+ * 100% Real-data driven, zero-simulation client-side operations.
  */
 
 export type ProjectTrack = 'software' | 'hardware' | 'auto';
@@ -39,12 +39,23 @@ export interface PlayableValidation {
   warnings: string[];
 }
 
+export interface CommitFileChange {
+  filename: string;
+  additions: number;
+  deletions: number;
+  status: string; // added, modified, removed
+}
+
 export interface GitHubCommit {
   sha: string;
   shortSha: string;
   message: string;
   author: string;
   date: string;
+  htmlUrl: string;
+  additions?: number;
+  deletions?: number;
+  files?: CommitFileChange[];
 }
 
 export interface GitHubRepoFile {
@@ -75,10 +86,14 @@ export interface GitHubRepoData {
   fullName: string;
   description: string;
   stars: number;
-  fork: boolean;
+  forks: number;
+  openIssues: number;
+  language: string;
+  license?: string;
   defaultBranch: string;
   createdAt: string;
   updatedAt: string;
+  pushedAt: string;
   commits: GitHubCommit[];
   files: GitHubRepoFile[];
   releases: GitHubRelease[];
@@ -101,6 +116,23 @@ export interface HackatimeProjectStats {
     color?: string;
   }>;
   isLoading: boolean;
+  error?: string;
+}
+
+export interface ManifestSubmission {
+  submissionId: string;
+  yswsName: string | null;
+  shipStatus: string;
+  hoursShipped: number | null;
+  approvedAt: string | null;
+  createdAt: string;
+}
+
+export interface ManifestLookupData {
+  isLoading: boolean;
+  isRegistered: boolean;
+  otherSubmissions: ManifestSubmission[];
+  halceonUrl: string;
   error?: string;
 }
 

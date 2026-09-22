@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useMemo } from 'react';
+import { marked } from 'marked';
 
 interface ReadmePanelProps {
   markdown: string;
@@ -6,20 +7,28 @@ interface ReadmePanelProps {
 }
 
 export const ReadmePanel: React.FC<ReadmePanelProps> = ({ markdown, loading }) => {
+  const html = useMemo(() => {
+    if (!markdown) return '';
+    try {
+      return marked.parse(markdown) as string;
+    } catch {
+      return markdown;
+    }
+  }, [markdown]);
+
   return (
-    <div className="readme-content h-full overflow-y-auto px-6 py-5 text-sm leading-[1.7] text-rv-text bg-rv-bg">
+    <div className="h-full overflow-y-auto px-8 py-6 bg-rv-surface select-text">
       {loading ? (
         <div className="flex items-center justify-center p-12 text-rv-dim text-sm">
-          Loading README...
+          Loading repository README...
         </div>
-      ) : markdown ? (
-        <div className="space-y-4 max-w-4xl">
-          <pre className="bg-rv-surface border border-rv-border rounded-lg p-5 text-[13px] font-mono text-rv-text whitespace-pre-wrap leading-relaxed">
-            {markdown}
-          </pre>
-        </div>
+      ) : html ? (
+        <div 
+          className="readme-content max-w-4xl mx-auto"
+          dangerouslySetInnerHTML={{ __html: html }}
+        />
       ) : (
-        <p className="text-rv-dim italic">No README content available.</p>
+        <p className="text-rv-dim italic">No README content found in default branch.</p>
       )}
     </div>
   );
