@@ -16,22 +16,45 @@ export function evaluateSubmissionRules(
 ): RuleCheckResult[] {
   const results: RuleCheckResult[] = [];
 
-  // 1. Playable URL vs Code URL Blocker (GitBook Rule #10)
+  // 1. Playable URL vs Code URL Check
+  const hasReleases = Boolean(repoData.releases && repoData.releases.length > 0);
+  const isHardware = params.track === 'hardware';
+
   if (playableValidation.isCodeDuplicate) {
-    results.push({
-      id: 'rule-playable-code-duplicate',
-      title: 'Playable URL is Source Code',
-      severity: 'blocker',
-      message: 'Playable URL is identical to the GitHub repository URL.',
-      detail: 'GitBook Rule #10 explicitly requires a live deployment, interactive site, or demo video (for CLI/scripts). Source code repository is not an acceptable playable URL.'
-    });
+    if (isHardware) {
+      results.push({
+        id: 'rule-playable-hardware-repo',
+        title: 'Hardware Track: Repository Deliverables',
+        severity: 'pass',
+        message: 'Playable URL points to the hardware repository containing CAD/PCB files.',
+        detail: 'Hardware track submissions standardly use their repository to store KiCad, STEP, Gerber, and schematic project files.'
+      });
+    } else if (hasReleases) {
+      const release = repoData.releases![0];
+      const assetNames = release.assets.map(a => a.name).join(', ') || release.tagName;
+      results.push({
+        id: 'rule-playable-release-binary',
+        title: 'Compiled Binary in GitHub Releases',
+        severity: 'pass',
+        message: `Executable deliverable available in GitHub Releases (${assetNames}).`,
+        detail: `The project provides compiled binaries in release '${release.name || release.tagName}'. Playable URL pointing to repo is acceptable for desktop/CLI binaries.`
+      });
+    } else {
+      results.push({
+        id: 'rule-playable-code-duplicate',
+        title: 'Playable URL is Source Code',
+        severity: 'blocker',
+        message: 'Playable URL is identical to the GitHub repository URL.',
+        detail: 'GitBook Rule #10 requires a live deployment, interactive site, precompiled release binary, or demo video. Raw repository without build artifacts cannot be tested.'
+      });
+    }
   } else if (!params.playableUrl) {
     results.push({
       id: 'rule-playable-missing',
       title: 'Missing Playable URL',
       severity: 'blocker',
       message: 'No playable URL or demo video was provided.',
-      detail: 'Every submission requires a functioning demo link or video demonstration.'
+      detail: 'Every submission requires a functioning demo link, release binary, or video demonstration.'
     });
   } else {
     results.push({

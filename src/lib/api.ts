@@ -108,6 +108,35 @@ export async function fetchGitHubRepoData(codeUrl: string): Promise<Partial<GitH
       // README fetch non-fatal
     }
 
+    // 5. Fetch GitHub Releases (e.g. precompiled binaries, .exe, .dmg, .zip, releases)
+    let releases: GitHubRepoData['releases'] = [];
+    try {
+      const releasesRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/releases`);
+      if (releasesRes.ok) {
+        const releasesJson = await releasesRes.json();
+        releases = (releasesJson || []).map((r: any) => ({
+          id: r.id,
+          tagName: r.tag_name || '',
+          name: r.name || r.tag_name || 'Release',
+          body: r.body || '',
+          publishedAt: r.published_at || '',
+          assets: (r.assets || []).map((a: any) => ({
+            name: a.name,
+            size: a.size,
+            downloadUrl: a.browser_download_url
+          }))
+        }));
+      }
+    } catch {
+      // Releases fetch non-fatal
+    }
+
+    // 6. Identify Hardware / CAD deliverables in file tree
+    const hardwareExts = ['.step', '.stp', '.kicad_pcb', '.kicad_sch', '.sch', '.brd', '.stl', '.gerber', '.gbr', '.dxf', '.f3d'];
+    const hardwareFiles = files.filter(f => 
+      hardwareExts.some(ext => f.name.toLowerCase().endsWith(ext))
+    );
+
     return {
       owner,
       repo,
@@ -120,6 +149,8 @@ export async function fetchGitHubRepoData(codeUrl: string): Promise<Partial<GitH
       updatedAt: repoJson.updated_at || '',
       commits,
       files,
+      releases,
+      hardwareFiles,
       readmeContent,
       isLoading: false
     };

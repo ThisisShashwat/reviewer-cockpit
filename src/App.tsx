@@ -236,11 +236,21 @@ export default function App() {
     );
   };
 
-  const isPlayableBlocked = playableValidation.isCodeDuplicate || playableValidation.isProhibitedHost;
-  const blockerMessage = playableValidation.isCodeDuplicate
-    ? 'CRITICAL: Playable URL is Source Code'
-    : playableValidation.isProhibitedHost
+  const hasReleases = Boolean(repoData.releases && repoData.releases.length > 0);
+  const isHardware = params.track === 'hardware';
+
+  const isPlayableBlocked = Boolean(
+    playableValidation.isProhibitedHost ||
+    (!params.playableUrl) ||
+    (playableValidation.isCodeDuplicate && !isHardware && !hasReleases)
+  );
+  
+  const blockerMessage = playableValidation.isProhibitedHost
     ? 'Prohibited Hosting Platform'
+    : (!params.playableUrl)
+    ? 'Missing Playable URL'
+    : (playableValidation.isCodeDuplicate && !isHardware && !hasReleases)
+    ? 'CRITICAL: Playable URL is Source Code'
     : undefined;
 
   return (
@@ -299,6 +309,10 @@ export default function App() {
               <DemoIframe
                 demoUrl={params.playableUrl || null}
                 codeUrl={params.codeUrl || null}
+                track={params.track}
+                releases={repoData.releases}
+                hardwareFiles={repoData.hardwareFiles}
+                lapseLinks={params.lapseLinks}
               />
             </div>
 

@@ -54,6 +54,21 @@ export interface GitHubRepoFile {
   type: 'file' | 'dir';
 }
 
+export interface GitHubReleaseAsset {
+  name: string;
+  size: number;
+  downloadUrl: string;
+}
+
+export interface GitHubRelease {
+  id: number;
+  tagName: string;
+  name: string;
+  body: string;
+  publishedAt: string;
+  assets: GitHubReleaseAsset[];
+}
+
 export interface GitHubRepoData {
   owner: string;
   repo: string;
@@ -66,6 +81,8 @@ export interface GitHubRepoData {
   updatedAt: string;
   commits: GitHubCommit[];
   files: GitHubRepoFile[];
+  releases: GitHubRelease[];
+  hardwareFiles: GitHubRepoFile[];
   readmeContent?: string;
   isLoading: boolean;
   error?: string;
