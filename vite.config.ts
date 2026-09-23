@@ -8,5 +8,11 @@ export default defineConfig({
     host: '0.0.0.0',
     port: 5173,
     allowedHosts: true, // Allow Tailscale ("rpi", "*.ts.net") and LAN hosts
+    proxy: {
+      '/api': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+      },
+    },
   },
 });

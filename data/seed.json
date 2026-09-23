@@ -1,0 +1,91 @@
+[
+  {
+    "id": "rec_seed_001_cli",
+    "projectName": "FastFetch CLI",
+    "projectType": "software",
+    "codeUrl": "https://github.com/alex-dev/fastfetch-rs",
+    "playableUrl": "https://github.com/alex-dev/fastfetch-rs/releases/tag/v1.0.0",
+    "description": "A high-performance CLI system information tool written in Rust. Features formatted terminal tables, hardware probe caching, and color-coded ASCII logos. Pre-compiled binaries attached to the v1.0.0 release.",
+    "githubUsername": "alex-dev",
+    "overrideHours": 8.5,
+    "overrideHoursJustification": "Spent 8.5 hours implementing sysfs hardware probes, building cross-platform release binaries, and writing comprehensive unit tests.",
+    "hackatimeId": "alex_dev_99",
+    "hackatimeProjects": "fastfetch-rs (2026-09-15 to 2026-09-20)",
+    "lapseLinks": [
+      "https://lapse.hackclub.com/video/alex_cli_demo_session.mp4"
+    ],
+    "approved": false,
+    "reviewStatus": "Pending",
+    "submittedAt": "2026-09-20T14:32:00.000Z"
+  },
+  {
+    "id": "rec_seed_002_game",
+    "projectName": "Neon Orbit Web Game",
+    "projectType": "software",
+    "codeUrl": "https://github.com/sam-coder/neon-orbit",
+    "playableUrl": "https://neon-orbit.vercel.app",
+    "description": "An arcade space gravity game built with HTML5 Canvas, Web Audio API, and TypeScript. Player navigates orbital gravity wells to slingshot between planets.",
+    "githubUsername": "sam-coder",
+    "overrideHours": 14.0,
+    "overrideHoursJustification": "14 hours logged for orbital physics simulations, particle explosions, procedural level generation, and soundtrack sound effects.",
+    "hackatimeId": "sam_coder_space",
+    "hackatimeProjects": "neon-orbit (2026-09-18 to 2026-09-22)",
+    "lapseLinks": [
+      "https://lapse.hackclub.com/video/neon_gameplay_timelapse.mp4"
+    ],
+    "approved": false,
+    "reviewStatus": "Pending",
+    "submittedAt": "2026-09-22T08:15:00.000Z"
+  },
+  {
+    "id": "rec_seed_003_update",
+    "projectName": "GitMetrics Dashboard v2",
+    "projectType": "software",
+    "codeUrl": "https://github.com/priya-tech/gitmetrics-app",
+    "playableUrl": "https://gitmetrics-app.web.app",
+    "description": "Major update: added GraphQL support, dark mode toggles, and commit velocity charts. Previously submitted v1 for 6 hours; now submitting 12 new hours of work for v2 features.",
+    "githubUsername": "priya-tech",
+    "overrideHours": 12.0,
+    "overrideHoursJustification": "12 new hours spent rewriting backend to GraphQL, adding SVG commit activity graphs, and SQLite query caching.",
+    "hackatimeId": "priya_t",
+    "hackatimeProjects": "gitmetrics-app (2026-09-10 to 2026-09-22)",
+    "lapseLinks": [],
+    "approved": false,
+    "reviewStatus": "Pending",
+    "submittedAt": "2026-09-22T19:40:00.000Z"
+  },
+  {
+    "id": "rec_seed_004_streamlit",
+    "projectName": "Stock Predictor AI",
+    "projectType": "software",
+    "codeUrl": "https://github.com/quant-kid/stock-ai",
+    "playableUrl": "https://stock-ai-demo.streamlit.app",
+    "description": "A financial data visualization app using Python Streamlit and yfinance. Displays moving averages and candlestick charts.",
+    "githubUsername": "quant-kid",
+    "overrideHours": 5.0,
+    "overrideHoursJustification": "5 hours coding python charts.",
+    "hackatimeId": "quant_kid",
+    "hackatimeProjects": "stock-ai",
+    "lapseLinks": [],
+    "approved": false,
+    "reviewStatus": "Pending",
+    "submittedAt": "2026-09-21T11:00:00.000Z"
+  },
+  {
+    "id": "rec_seed_005_bot_spike",
+    "projectName": "UltraBot Telegram Automator",
+    "projectType": "software",
+    "codeUrl": "https://github.com/anon-user/ultrabot-auto",
+    "playableUrl": "https://github.com/anon-user/ultrabot-auto",
+    "description": "A single script python telegram bot with minimal changes, logged 22 hours in a single night.",
+    "githubUsername": "anon-user",
+    "overrideHours": 22.0,
+    "overrideHoursJustification": "22 hours working without stopping.",
+    "hackatimeId": "anon_user_fake",
+    "hackatimeProjects": "ultrabot-auto",
+    "lapseLinks": [],
+    "approved": false,
+    "reviewStatus": "Pending",
+    "submittedAt": "2026-09-22T23:59:00.000Z"
+  }
+]
