@@ -23,7 +23,7 @@ export const QueuePage: React.FC<QueuePageProps> = ({
   isLoading,
 }) => {
   const [search, setSearch] = useState('');
-  const [selectedStatus, setSelectedStatus] = useState<string>('all');
+  const [selectedStatus, setSelectedStatus] = useState<string>('pending');
   const [selectedTrack, setSelectedTrack] = useState<string>('all');
   const [highlightedIndex, setHighlightedIndex] = useState(0);
 
@@ -54,10 +54,46 @@ export const QueuePage: React.FC<QueuePageProps> = ({
     return list;
   }, [projects, selectedStatus, selectedTrack, search]);
 
-  const softwareProjectsCount = useMemo(
-    () => projects.filter((p) => p.projectType === 'software').length,
+  // Nested track counts based on currently selected status
+  const trackCounts = useMemo(() => {
+    const subset =
+      selectedStatus === 'all'
+        ? projects
+        : projects.filter((p) => p.cockpitStatus === selectedStatus);
+    return {
+      all: subset.length,
+      software: subset.filter((p) => p.projectType === 'software').length,
+      hardware: subset.filter((p) => p.projectType === 'hardware').length,
+    };
+  }, [projects, selectedStatus]);
+
+  // Nested status counts based on currently selected track
+  const statusCounts = useMemo(() => {
+    const subset =
+      selectedTrack === 'all'
+        ? projects
+        : projects.filter((p) => p.projectType === selectedTrack);
+    return {
+      all: subset.length,
+      pending: subset.filter((p) => p.cockpitStatus === 'pending').length,
+      preApproved: subset.filter((p) => p.cockpitStatus === 'pre_approved').length,
+      rejected: subset.filter((p) => p.cockpitStatus === 'rejected').length,
+      flaggedFraud: subset.filter((p) => p.cockpitStatus === 'flagged_fraud').length,
+    };
+  }, [projects, selectedTrack]);
+
+  // Software submissions strictly pending review
+  const pendingSoftwareCount = useMemo(
+    () =>
+      projects.filter((p) => p.projectType === 'software' && p.cockpitStatus === 'pending')
+        .length,
     [projects]
   );
+
+  // Reset highlight cursor when filtering changes
+  useEffect(() => {
+    setHighlightedIndex(0);
+  }, [selectedStatus, selectedTrack, search]);
 
   // Keyboard navigation: j/k to move highlight, Enter to select
   useEffect(() => {
@@ -134,7 +170,7 @@ export const QueuePage: React.FC<QueuePageProps> = ({
                 className="px-4 py-2 rounded-lg bg-brand-orange hover:bg-orange-600 text-white text-xs font-semibold flex items-center gap-2 transition-colors shadow-sm"
               >
                 <Lock className="w-3.5 h-3.5" />
-                <span>Review Software Queue ({softwareProjectsCount})</span>
+                <span>Review Software Queue ({pendingSoftwareCount})</span>
                 <ArrowRight className="w-3.5 h-3.5" />
               </button>
             )}
@@ -162,17 +198,6 @@ export const QueuePage: React.FC<QueuePageProps> = ({
           <div className="flex items-center gap-1 bg-canvas-subtle p-1 rounded-lg border border-border-subtle text-xs">
             <button
               type="button"
-              onClick={() => setSelectedStatus('all')}
-              className={`px-3 py-1 rounded-md font-medium transition-colors ${
-                selectedStatus === 'all'
-                  ? 'bg-canvas-card text-content-primary shadow-sm font-semibold'
-                  : 'text-content-tertiary hover:text-content-primary'
-              }`}
-            >
-              All ({projects.length})
-            </button>
-            <button
-              type="button"
               onClick={() => setSelectedStatus('pending')}
               className={`px-3 py-1 rounded-md font-medium transition-colors ${
                 selectedStatus === 'pending'
@@ -180,7 +205,7 @@ export const QueuePage: React.FC<QueuePageProps> = ({
                   : 'text-content-tertiary hover:text-content-primary'
               }`}
             >
-              Pending ({stats?.pending ?? 0})
+              Pending ({statusCounts.pending})
             </button>
             <button
               type="button"
@@ -191,7 +216,7 @@ export const QueuePage: React.FC<QueuePageProps> = ({
                   : 'text-content-tertiary hover:text-content-primary'
               }`}
             >
-              Pre-Approved ({stats?.preApproved ?? 0})
+              Pre-Approved ({statusCounts.preApproved})
             </button>
             <button
               type="button"
@@ -202,7 +227,7 @@ export const QueuePage: React.FC<QueuePageProps> = ({
                   : 'text-content-tertiary hover:text-content-primary'
               }`}
             >
-              Rejected ({stats?.rejected ?? 0})
+              Rejected ({statusCounts.rejected})
             </button>
             <button
               type="button"
@@ -213,7 +238,18 @@ export const QueuePage: React.FC<QueuePageProps> = ({
                   : 'text-content-tertiary hover:text-content-primary'
               }`}
             >
-              Fraud ({stats?.flaggedFraud ?? 0})
+              Fraud ({statusCounts.flaggedFraud})
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedStatus('all')}
+              className={`px-3 py-1 rounded-md font-medium transition-colors ${
+                selectedStatus === 'all'
+                  ? 'bg-canvas-card text-content-primary shadow-sm font-semibold'
+                  : 'text-content-tertiary hover:text-content-primary'
+              }`}
+            >
+              All ({statusCounts.all})
             </button>
           </div>
 
@@ -228,7 +264,7 @@ export const QueuePage: React.FC<QueuePageProps> = ({
                   : 'text-content-tertiary hover:text-content-primary'
               }`}
             >
-              All Tracks
+              All Tracks ({trackCounts.all})
             </button>
             <button
               type="button"
@@ -239,7 +275,7 @@ export const QueuePage: React.FC<QueuePageProps> = ({
                   : 'text-content-tertiary hover:text-content-primary'
               }`}
             >
-              Software ({softwareProjectsCount})
+              Software ({trackCounts.software})
             </button>
             <button
               type="button"
@@ -250,7 +286,7 @@ export const QueuePage: React.FC<QueuePageProps> = ({
                   : 'text-content-tertiary hover:text-content-primary'
               }`}
             >
-              Hardware ({projects.length - softwareProjectsCount})
+              Hardware ({trackCounts.hardware})
             </button>
           </div>
 
