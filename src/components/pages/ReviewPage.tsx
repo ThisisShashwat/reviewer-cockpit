@@ -34,9 +34,9 @@ export type ReviewStep = 0 | 1 | 2 | 3 | 4 | 5 | 6;
 const STEPS = [
   { id: 0 as ReviewStep, label: '1. Hackatime', title: 'Project Telemetry', icon: Activity },
   { id: 1 as ReviewStep, label: '2. History', title: 'Live & Halceon Submissions', icon: Layers },
-  { id: 2 as ReviewStep, label: '3. Introspect', title: "Sahil's Introspect", icon: Layers },
-  { id: 3 as ReviewStep, label: '4. README', title: 'URLs & README Verification', icon: FileText },
-  { id: 4 as ReviewStep, label: '5. Demo', title: 'Playable Deliverable Testing', icon: PlaySquare },
+  { id: 2 as ReviewStep, label: '3. README', title: 'URLs & README Verification', icon: FileText },
+  { id: 3 as ReviewStep, label: '4. Demo', title: 'Playable Deliverable Testing', icon: PlaySquare },
+  { id: 4 as ReviewStep, label: '5. Introspect', title: "Sahil's Introspect", icon: Layers },
   { id: 5 as ReviewStep, label: '6. Commits & AI', title: 'Git History & AI Heuristics', icon: GitCommit },
   { id: 6 as ReviewStep, label: '7. Verdict', title: 'Final Verdict Desk', icon: ShieldCheck },
 ];
@@ -56,6 +56,8 @@ interface ReviewPageProps {
   auditHistory: AuditLogEntry[];
   onNoteAdded: (entry: AuditLogEntry) => void;
   onVerdictSubmitted: (verdict: VerdictDetails, updatedProject: CockpitProject) => void;
+  initialStep?: ReviewStep;
+  onStepChange?: (step: ReviewStep) => void;
 }
 
 export const ReviewPage: React.FC<ReviewPageProps> = ({
@@ -73,15 +75,31 @@ export const ReviewPage: React.FC<ReviewPageProps> = ({
   auditHistory,
   onNoteAdded,
   onVerdictSubmitted,
+  initialStep,
+  onStepChange,
 }) => {
-  const [currentStep, setCurrentStep] = useState<ReviewStep>(0);
+  const [currentStep, setCurrentStep] = useState<ReviewStep>(initialStep ?? 0);
   const [reviewChecklist, setReviewChecklist] = useState<Record<string, boolean>>({});
+  const [baselineArchiveCommit, setBaselineArchiveCommit] = useState<{
+    commitHash: string;
+    shortHash: string;
+    shipName: string;
+    archiveUrl: string;
+  } | undefined>(undefined);
 
-  // Reset to Step 0 when switching projects
+  // Sync step changes upward
+  const handleStepSelect = (step: ReviewStep) => {
+    setCurrentStep(step);
+    onStepChange?.(step);
+  };
+
+  // Reset to initialStep or Step 0 when switching projects
   useEffect(() => {
-    setCurrentStep(0);
+    const s = initialStep ?? 0;
+    setCurrentStep(s);
     setReviewChecklist(project.cockpitVerdict?.appliedChecklist || {});
-  }, [project.id]);
+    setBaselineArchiveCommit(undefined);
+  }, [project.id, initialStep]);
 
   const toggleChecklist = (key: string, status?: boolean) => {
     setReviewChecklist((prev) => {
@@ -114,7 +132,7 @@ export const ReviewPage: React.FC<ReviewPageProps> = ({
       } else {
         const num = parseInt(e.key, 10);
         if (num >= 1 && num <= 7) {
-          setCurrentStep((num - 1) as ReviewStep);
+          handleStepSelect((num - 1) as ReviewStep);
         }
       }
     };
@@ -125,13 +143,14 @@ export const ReviewPage: React.FC<ReviewPageProps> = ({
 
   const handleAdvance = () => {
     if (currentStep < 6) {
-      setCurrentStep((s) => (s + 1) as ReviewStep);
+      const next = (currentStep + 1) as ReviewStep;
+      handleStepSelect(next);
     }
   };
 
   const handleEarlyExit = (reason: string) => {
     toast.info(`Flag noted: ${reason}. Advanced to Final Verdict Desk.`);
-    setCurrentStep(6);
+    handleStepSelect(6);
   };
 
   return (
@@ -187,7 +206,7 @@ export const ReviewPage: React.FC<ReviewPageProps> = ({
               <button
                 key={s.id}
                 type="button"
-                onClick={() => setCurrentStep(s.id)}
+                onClick={() => handleStepSelect(s.id)}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
                   isActive
                     ? 'bg-brand-orange text-white shadow-sm ring-2 ring-brand-orange/20'
@@ -260,20 +279,11 @@ export const ReviewPage: React.FC<ReviewPageProps> = ({
               onEarlyExit={handleEarlyExit}
               reviewChecklist={reviewChecklist}
               onToggleChecklist={toggleChecklist}
+              onBaselineCommitDiscovered={setBaselineArchiveCommit}
             />
           )}
 
           {currentStep === 2 && (
-            <SahilIntrospectStage
-              project={project}
-              onAdvance={handleAdvance}
-              onEarlyExit={handleEarlyExit}
-              reviewChecklist={reviewChecklist}
-              onToggleChecklist={toggleChecklist}
-            />
-          )}
-
-          {currentStep === 3 && (
             <ProjectReadmeStage
               project={project}
               gitHubData={gitHubData}
@@ -284,10 +294,20 @@ export const ReviewPage: React.FC<ReviewPageProps> = ({
             />
           )}
 
-          {currentStep === 4 && (
+          {currentStep === 3 && (
             <ShippingDeliverablesStage
               project={project}
               gitHubData={gitHubData}
+              onAdvance={handleAdvance}
+              onEarlyExit={handleEarlyExit}
+              reviewChecklist={reviewChecklist}
+              onToggleChecklist={toggleChecklist}
+            />
+          )}
+
+          {currentStep === 4 && (
+            <SahilIntrospectStage
+              project={project}
               onAdvance={handleAdvance}
               onEarlyExit={handleEarlyExit}
               reviewChecklist={reviewChecklist}
@@ -299,6 +319,7 @@ export const ReviewPage: React.FC<ReviewPageProps> = ({
             <CommitsDiffsStage
               project={project}
               gitHubData={gitHubData}
+              baselineArchiveCommit={baselineArchiveCommit}
               onAdvance={handleAdvance}
               onEarlyExit={handleEarlyExit}
               reviewChecklist={reviewChecklist}
