@@ -242,6 +242,14 @@ export interface HackatimeProjectStats {
   totalSeconds: number;
   totalHoursReadable: string;
   projects: string[];
+  // AI Heartbeats Telemetry (Horizons 1/3 standard)
+  aiSeconds?: number;
+  aiHoursReadable?: string;
+  aiPercent?: number;
+  humanSeconds?: number;
+  humanHoursReadable?: string;
+  humanPercent?: number;
+  horizonsApprovedHours?: number;
   languages: Array<{
     name: string;
     text: string;
@@ -257,6 +265,16 @@ export interface HackatimeProjectStats {
     color?: string;
   }>;
   isLoading: boolean;
+  error?: string;
+}
+
+export interface ArchiveCommitInfo {
+  success: boolean;
+  commitHash?: string;
+  shortHash?: string;
+  gitUrl?: string;
+  archiveId?: string;
+  checkedAt?: string;
   error?: string;
 }
 

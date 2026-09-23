@@ -10,6 +10,8 @@ import {
   RefreshCw,
   HelpCircle,
   Lock,
+  Bot,
+  Undo2,
 } from 'lucide-react';
 import { fetchHackatimeData } from '../../lib/api';
 import { CockpitProject, HackatimeProjectStats } from '../../lib/types';
@@ -209,13 +211,32 @@ export const HackatimeSanityStage: React.FC<HackatimeSanityStageProps> = ({
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {/* Card 1: Tracked Project & Alignment */}
             <div className="p-4 rounded-xl bg-[#121214] border border-[#27272a] text-white space-y-2 shadow-lg">
-              <span className="text-[11px] font-semibold text-[#a1a1aa] uppercase tracking-wider flex items-center gap-1.5">
-                <FolderCheck className="w-3.5 h-3.5 text-blue-400" />
-                Tracked Project Name
-              </span>
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-semibold text-[#a1a1aa] uppercase tracking-wider flex items-center gap-1.5">
+                  <FolderCheck className="w-3.5 h-3.5 text-blue-400" />
+                  Tracked Project Name
+                </span>
+                {activeProjectName.toLowerCase() !== initialCleanName.toLowerCase() && (
+                  <span className="text-[10px] font-bold text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
+                    MANUAL OVERRIDE
+                  </span>
+                )}
+              </div>
               <div className="text-base font-bold font-mono text-white truncate">
                 {activeProjectName || 'None specified'}
               </div>
+              {activeProjectName.toLowerCase() !== initialCleanName.toLowerCase() && (
+                <div className="flex items-center justify-between text-[11px] text-[#a1a1aa] pt-0.5">
+                  <span className="truncate">Submitted: <strong className="text-zinc-300 font-mono">{initialCleanName}</strong></span>
+                  <button
+                    type="button"
+                    onClick={() => setActiveProjectName(initialCleanName)}
+                    className="text-brand-orange hover:underline text-[10px] font-semibold ml-2 shrink-0 cursor-pointer flex items-center gap-1"
+                  >
+                    <Undo2 className="w-3 h-3" /> Reset
+                  </button>
+                </div>
+              )}
               <div className="pt-1">
                 {stats?.isProjectFound ? (
                   <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
@@ -259,6 +280,102 @@ export const HackatimeSanityStage: React.FC<HackatimeSanityStageProps> = ({
               <p className="text-[11px] text-[#71717a]">
                 Total account editor history across all programs
               </p>
+            </div>
+          </div>
+
+          {/* AI vs Human Coding Heartbeat Telemetry (Horizons 1/3 Mathematical Standard) */}
+          <div className="p-5 rounded-2xl bg-[#121214] border border-[#27272a] text-white space-y-4 shadow-lg">
+            <div className="flex items-center justify-between border-b border-[#27272a] pb-3">
+              <div className="flex items-center gap-2">
+                <Bot className="w-4 h-4 text-purple-400" />
+                <h3 className="text-xs font-bold uppercase tracking-wider text-white">
+                  Heartbeat Telemetry: Human vs. AI Breakdown (Horizons Telemetry Standard)
+                </h3>
+              </div>
+              <span className="text-[11px] font-mono text-[#a1a1aa] bg-[#18181b] px-2.5 py-1 rounded border border-[#27272a]">
+                Categories: ai coding, browsing, meeting, communicating
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              {/* Human Coding Box */}
+              <div className="p-3.5 rounded-xl bg-[#18181b] border border-emerald-500/20 text-white space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-semibold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                    Human Coding Time
+                  </span>
+                  <span className="text-xs font-mono font-bold text-emerald-400">
+                    {stats?.humanPercent ?? 100}%
+                  </span>
+                </div>
+                <div className="text-xl font-bold font-mono text-white">
+                  {stats?.humanHoursReadable || (stats?.humanSeconds ? `${(stats.humanSeconds / 3600).toFixed(1)}h` : '0h')}
+                </div>
+                <p className="text-[10px] text-[#a1a1aa]">Credited at 100% full hourly rate</p>
+              </div>
+
+              {/* AI Coding Box */}
+              <div className="p-3.5 rounded-xl bg-[#18181b] border border-purple-500/20 text-white space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-semibold text-purple-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <Bot className="w-3.5 h-3.5 text-purple-400" />
+                    AI & Auxiliary Heartbeats
+                  </span>
+                  <span className="text-xs font-mono font-bold text-purple-400">
+                    {stats?.aiPercent ?? 0}%
+                  </span>
+                </div>
+                <div className="text-xl font-bold font-mono text-purple-300">
+                  {stats?.aiHoursReadable || (stats?.aiSeconds ? `${(stats.aiSeconds / 3600).toFixed(1)}h` : '0h')}
+                </div>
+                <p className="text-[10px] text-[#a1a1aa]">Credited at 33.3% (1/3 formula)</p>
+              </div>
+
+              {/* Horizons Credited Total */}
+              <div className="p-3.5 rounded-xl bg-[#18181b] border border-brand-orange/30 text-white space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-semibold text-brand-orange uppercase tracking-wider flex items-center gap-1.5">
+                    <Clock className="w-3.5 h-3.5 text-brand-orange" />
+                    Horizons Credited Total
+                  </span>
+                  <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded">
+                    1/3 Formula
+                  </span>
+                </div>
+                <div className="text-xl font-bold font-mono text-brand-orange">
+                  {stats?.horizonsApprovedHours !== undefined ? `${stats.horizonsApprovedHours}h` : '—'}
+                </div>
+                <p className="text-[10px] text-[#a1a1aa]">
+                  Formula: Human + (AI / 3)
+                </p>
+              </div>
+            </div>
+
+            {/* Proportional Split Bar */}
+            <div className="space-y-1.5">
+              <div className="h-3 rounded-full overflow-hidden flex bg-[#1f1f23] border border-[#27272a]">
+                <div
+                  style={{ width: `${Math.max(2, stats?.humanPercent ?? 100)}%` }}
+                  className="bg-emerald-500 transition-all"
+                  title={`Human: ${stats?.humanPercent ?? 100}%`}
+                />
+                <div
+                  style={{ width: `${Math.max(0, stats?.aiPercent ?? 0)}%` }}
+                  className="bg-purple-500 transition-all"
+                  title={`AI: ${stats?.aiPercent ?? 0}%`}
+                />
+              </div>
+              <div className="flex items-center justify-between text-[10px] text-[#a1a1aa]">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                  Human Coding ({stats?.humanPercent ?? 100}%)
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-purple-500" />
+                  AI Coding / Auxiliary ({stats?.aiPercent ?? 0}%)
+                </span>
+              </div>
             </div>
           </div>
 

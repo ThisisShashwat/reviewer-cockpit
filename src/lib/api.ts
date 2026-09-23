@@ -18,6 +18,7 @@ import {
   QueueStats,
   SubmitVerdictRequest,
   VerdictDetails,
+  ArchiveCommitInfo,
 } from './types';
 
 /**
@@ -275,8 +276,11 @@ export async function fetchHackatimeData(
       // stats fetch non-fatal
     }
 
-    // 3. If cleanProj is provided, fetch project-specific stats
+    // 3. If cleanProj is provided, fetch project-specific stats & AI category breakdown
     let projectStatsData: any = null;
+    let projectTotalSeconds: number | undefined = undefined;
+    let projectAiSeconds: number | undefined = undefined;
+
     if (cleanProj) {
       try {
         const projRes = await fetch(
@@ -289,6 +293,39 @@ export async function fetchHackatimeData(
         }
       } catch {
         // project specific stats fetch non-fatal
+      }
+
+      try {
+        // Exact total seconds for this project
+        const totalSecRes = await fetch(
+          `https://hackatime.hackclub.com/api/v1/users/${cleanId}/stats?total_seconds=true&filter_by_project=${encodeURIComponent(
+            cleanProj
+          )}`
+        );
+        if (totalSecRes.ok) {
+          const totalJson = await totalSecRes.json();
+          if (typeof totalJson.total_seconds === 'number') {
+            projectTotalSeconds = totalJson.total_seconds;
+          }
+        }
+      } catch {
+        // total_seconds fetch non-fatal
+      }
+
+      try {
+        // AI / non-coding categories matching Horizons standard
+        const aiUrl = `https://hackatime.hackclub.com/api/v1/users/${cleanId}/stats?total_seconds=true&filter_by_project=${encodeURIComponent(
+          cleanProj
+        )}&filter_by_category=ai%20coding,browsing,meeting,communicating`;
+        const aiRes = await fetch(aiUrl);
+        if (aiRes.ok) {
+          const aiJson = await aiRes.json();
+          if (typeof aiJson.total_seconds === 'number') {
+            projectAiSeconds = aiJson.total_seconds;
+          }
+        }
+      } catch {
+        // AI categories fetch non-fatal
       }
     }
 
@@ -303,6 +340,36 @@ export async function fetchHackatimeData(
           p.toLowerCase().includes(cleanProj.toLowerCase()) ||
           cleanProj.toLowerCase().includes(p.toLowerCase())
       );
+
+    // Calculate AI vs Human Heartbeats
+    const effectiveProjectSeconds =
+      projectTotalSeconds !== undefined
+        ? projectTotalSeconds
+        : typeof projData?.total_seconds === 'number'
+        ? projData.total_seconds
+        : 0;
+
+    const effectiveAiSeconds = projectAiSeconds !== undefined ? projectAiSeconds : 0;
+    const effectiveHumanSeconds = Math.max(0, effectiveProjectSeconds - effectiveAiSeconds);
+
+    const aiPercent =
+      effectiveProjectSeconds > 0
+        ? Math.round((effectiveAiSeconds / effectiveProjectSeconds) * 1000) / 10
+        : 0;
+    const humanPercent =
+      effectiveProjectSeconds > 0
+        ? Math.round((effectiveHumanSeconds / effectiveProjectSeconds) * 1000) / 10
+        : 0;
+
+    // Horizons 1/3 mathematical formula: (humanSeconds + aiSeconds / 3) / 3600
+    const horizonsApprovedHours =
+      Math.round(((effectiveHumanSeconds + effectiveAiSeconds / 3) / 3600) * 10) / 10;
+
+    const fmtHours = (sec: number) => {
+      const h = Math.floor(sec / 3600);
+      const m = Math.floor((sec % 3600) / 60);
+      return `${h}h ${m}m`;
+    };
 
     // Languages: prefer project-specific languages if available, else lifetime
     const activeLanguages = (projData?.languages || lifeData?.languages || []).map((l: any) => ({
@@ -324,12 +391,19 @@ export async function fetchHackatimeData(
     return {
       username: projData?.username || lifeData?.username || `User #${cleanId}`,
       projectName: cleanProj,
-      projectHoursReadable: projData?.human_readable_total,
-      projectSeconds: projData?.total_seconds,
+      projectHoursReadable: projData?.human_readable_total || fmtHours(effectiveProjectSeconds),
+      projectSeconds: effectiveProjectSeconds,
       isProjectFound,
       totalSeconds: lifeData?.total_seconds || 0,
       totalHoursReadable: lifeData?.human_readable_total || '0h',
       projects,
+      aiSeconds: effectiveAiSeconds,
+      aiHoursReadable: fmtHours(effectiveAiSeconds),
+      aiPercent,
+      humanSeconds: effectiveHumanSeconds,
+      humanHoursReadable: fmtHours(effectiveHumanSeconds),
+      humanPercent,
+      horizonsApprovedHours,
       languages: activeLanguages,
       lifetimeLanguages,
       isLoading: false,
@@ -340,6 +414,22 @@ export async function fetchHackatimeData(
       isProjectFound: false,
       error: err.message || 'Unable to connect to Hackatime API',
     };
+  }
+}
+
+/**
+ * Programmatically inspects remote archive git repository to discover the baseline approved commit
+ */
+export async function fetchArchiveCommit(archiveUrl: string): Promise<ArchiveCommitInfo> {
+  if (!archiveUrl || !archiveUrl.trim()) {
+    return { success: false, error: 'No archive URL provided' };
+  }
+  try {
+    const res = await fetch(`/api/archive-commit?url=${encodeURIComponent(archiveUrl.trim())}`);
+    const data = await res.json();
+    return data;
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Failed to inspect archive commit' };
   }
 }
 

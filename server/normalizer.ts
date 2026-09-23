@@ -86,7 +86,7 @@ export function normalizeLiveSubmission(
     raw.githubUsername || fields["GitHub Username"] || fields.githubUsername || ""
   ).trim();
   const screenshotUrl = extractScreenshotUrl(
-    raw.screenshot ?? fields["Screenshot"] ?? fields.screenshot
+    raw.screenshotUrl ?? raw.screenshot ?? fields["Screenshot"] ?? fields.screenshot
   );
 
   const overrideHours = Number(

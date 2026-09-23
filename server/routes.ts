@@ -473,3 +473,62 @@ function decodeHtmlEntities(str: string): string {
   }
 });
 
+// Cache for archive commit lookups
+const archiveCommitCache = new Map<string, { commitHash: string; shortHash: string; gitUrl: string; archiveId: string; checkedAt: string }>();
+
+// -------------------------------------------------------------
+// 10. ARCHIVE COMMIT HASH: Programmatically inspect prior archive HEAD commit
+// -------------------------------------------------------------
+apiRouter.get("/archive-commit", async (req, res) => {
+  const rawUrl = String(req.query.url || "").trim();
+  if (!rawUrl) {
+    res.status(400).json({ error: "url query parameter is required" });
+    return;
+  }
+
+  const cleanUrl = rawUrl.replace(/\/git\/?$/, "");
+  const match = cleanUrl.match(/archive\.hackclub\.com\/(?:git\/)?([a-zA-Z0-9_-]+)/);
+  if (!match) {
+    res.status(400).json({ error: "Invalid Hack Club archive URL format" });
+    return;
+  }
+
+  const archiveId = match[1];
+  const gitUrl = `https://archive.hackclub.com/git/${archiveId}`;
+
+  if (archiveCommitCache.has(gitUrl)) {
+    res.json({ success: true, ...archiveCommitCache.get(gitUrl) });
+    return;
+  }
+
+  try {
+    const { exec } = await import("node:child_process");
+    const { promisify } = await import("node:util");
+    const execAsync = promisify(exec);
+
+    const { stdout } = await execAsync(`git ls-remote ${gitUrl}`, { timeout: 8000 });
+    const headMatch = stdout.match(/^([0-9a-f]{40})\s+HEAD/m) || stdout.match(/^([0-9a-f]{40})/m);
+
+    if (!headMatch) {
+      res.status(404).json({ error: "No git references found in archive repository" });
+      return;
+    }
+
+    const commitHash = headMatch[1];
+    const shortHash = commitHash.slice(0, 7);
+    const result = {
+      commitHash,
+      shortHash,
+      gitUrl,
+      archiveId,
+      checkedAt: new Date().toISOString(),
+    };
+
+    archiveCommitCache.set(gitUrl, result);
+    res.json({ success: true, ...result });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Failed to inspect remote archive git repository" });
+  }
+});
+
+
