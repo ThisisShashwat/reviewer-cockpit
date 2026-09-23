@@ -23,20 +23,22 @@ import {
 import { ReviewSidebar } from '../layout/ReviewSidebar';
 import { HackatimeSanityStage } from '../stages/HackatimeSanityStage';
 import { ManifestDoubleDipStage } from '../stages/ManifestDoubleDipStage';
+import { SahilIntrospectStage } from '../stages/SahilIntrospectStage';
 import { ProjectReadmeStage } from '../stages/ProjectReadmeStage';
 import { ShippingDeliverablesStage } from '../stages/ShippingDeliverablesStage';
 import { CommitsDiffsStage } from '../stages/CommitsDiffsStage';
 import { VerdictDeskStage } from '../stages/VerdictDeskStage';
 
-export type ReviewStep = 0 | 1 | 2 | 3 | 4 | 5;
+export type ReviewStep = 0 | 1 | 2 | 3 | 4 | 5 | 6;
 
 const STEPS = [
-  { id: 0 as ReviewStep, label: '1. Hackatime', title: 'Project-Specific Telemetry', icon: Activity },
+  { id: 0 as ReviewStep, label: '1. Hackatime', title: 'Project Telemetry', icon: Activity },
   { id: 1 as ReviewStep, label: '2. History', title: 'Live & Halceon Submissions', icon: Layers },
-  { id: 2 as ReviewStep, label: '3. README', title: 'URLs & README Verification', icon: FileText },
-  { id: 3 as ReviewStep, label: '4. Demo', title: 'Playable Deliverable Testing', icon: PlaySquare },
-  { id: 4 as ReviewStep, label: '5. Commits & AI', title: 'Git History & AI Heuristics', icon: GitCommit },
-  { id: 5 as ReviewStep, label: '6. Verdict', title: 'Final Verdict Desk', icon: ShieldCheck },
+  { id: 2 as ReviewStep, label: '3. Introspect', title: "Sahil's Introspect", icon: Layers },
+  { id: 3 as ReviewStep, label: '4. README', title: 'URLs & README Verification', icon: FileText },
+  { id: 4 as ReviewStep, label: '5. Demo', title: 'Playable Deliverable Testing', icon: PlaySquare },
+  { id: 5 as ReviewStep, label: '6. Commits & AI', title: 'Git History & AI Heuristics', icon: GitCommit },
+  { id: 6 as ReviewStep, label: '7. Verdict', title: 'Final Verdict Desk', icon: ShieldCheck },
 ];
 
 interface ReviewPageProps {
@@ -81,11 +83,18 @@ export const ReviewPage: React.FC<ReviewPageProps> = ({
     setReviewChecklist(project.cockpitVerdict?.appliedChecklist || {});
   }, [project.id]);
 
-  const toggleChecklist = (key: string) => {
-    setReviewChecklist((prev) => ({
-      ...prev,
-      [key]: !prev[key],
-    }));
+  const toggleChecklist = (key: string, status?: boolean) => {
+    setReviewChecklist((prev) => {
+      if (status !== undefined) {
+        if (prev[key] === status) {
+          const next = { ...prev };
+          delete next[key];
+          return next;
+        }
+        return { ...prev, [key]: status };
+      }
+      return { ...prev, [key]: !prev[key] };
+    });
   };
 
   // Global Keyboard Shortcuts
@@ -104,7 +113,7 @@ export const ReviewPage: React.FC<ReviewPageProps> = ({
         onPrevProject();
       } else {
         const num = parseInt(e.key, 10);
-        if (num >= 1 && num <= 6) {
+        if (num >= 1 && num <= 7) {
           setCurrentStep((num - 1) as ReviewStep);
         }
       }
@@ -115,14 +124,14 @@ export const ReviewPage: React.FC<ReviewPageProps> = ({
   }, [onBackToQueue, onNextProject, onPrevProject]);
 
   const handleAdvance = () => {
-    if (currentStep < 5) {
+    if (currentStep < 6) {
       setCurrentStep((s) => (s + 1) as ReviewStep);
     }
   };
 
   const handleEarlyExit = (reason: string) => {
     toast.info(`Flag noted: ${reason}. Advanced to Final Verdict Desk.`);
-    setCurrentStep(5);
+    setCurrentStep(6);
   };
 
   return (
@@ -134,50 +143,41 @@ export const ReviewPage: React.FC<ReviewPageProps> = ({
           <button
             type="button"
             onClick={onBackToQueue}
-            className="flex items-center gap-1.5 text-xs font-semibold text-content-secondary hover:text-content-primary px-3 py-1.5 rounded-lg bg-canvas-subtle border border-border-subtle hover:bg-canvas-hover transition-colors shrink-0"
+            className="flex items-center gap-1.5 text-xs font-semibold text-content-secondary hover:text-content-primary px-3 py-1.5 rounded-lg bg-canvas-subtle border border-border-subtle hover:bg-canvas-hover transition-colors shrink-0 cursor-pointer"
             title="Return to Queue (Esc)"
           >
             <ArrowLeft className="w-3.5 h-3.5" />
-            <span>Queue</span>
+            <span>Back to Queue</span>
           </button>
 
-          <div className="h-4 w-[1px] bg-border-subtle shrink-0" />
-
-          {/* Software Queue Lock Badge */}
-          {onToggleQueueLock ? (
+          {onToggleQueueLock && (
             <button
               type="button"
               onClick={onToggleQueueLock}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-mono font-medium border transition-colors ${
+              className={`flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-md border transition-colors cursor-pointer ${
                 isSoftwareQueueLocked
-                  ? 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100'
-                  : 'bg-canvas-subtle text-content-secondary border-border-subtle hover:bg-canvas-hover'
+                  ? 'bg-blue-50 border-blue-200 text-blue-700'
+                  : 'bg-canvas-subtle border-border-subtle text-content-secondary'
               }`}
-              title={
-                isSoftwareQueueLocked
-                  ? 'Queue locked to Software submissions only. Click to unlock.'
-                  : 'Queue unlocked. Click to lock to Software track.'
-              }
+              title="Toggle Software / Hardware Queue Lock"
             >
               {isSoftwareQueueLocked ? (
-                <Lock className="w-3 h-3 text-blue-600" />
+                <>
+                  <Lock className="w-3 h-3 text-blue-600" />
+                  <span>Software Filter Active</span>
+                </>
               ) : (
-                <Unlock className="w-3 h-3 text-content-tertiary" />
+                <>
+                  <Unlock className="w-3 h-3 text-content-tertiary" />
+                  <span>All Tracks</span>
+                </>
               )}
-              <span>
-                {isSoftwareQueueLocked ? 'Software Queue' : 'All Tracks'}: {currentIndex + 1} / {totalProjects}
-              </span>
             </button>
-          ) : (
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-mono font-medium bg-blue-50 text-blue-700 border border-blue-200">
-              <Lock className="w-3 h-3 text-blue-600" />
-              <span>Software Queue: {currentIndex + 1} / {totalProjects}</span>
-            </div>
           )}
         </div>
 
-        {/* Center: Stage Step Navigator */}
-        <div className="hidden lg:flex items-center gap-1">
+        {/* Center: Review Stage Stepper Pills */}
+        <div className="flex items-center gap-1 overflow-x-auto max-w-2xl px-2 py-1 scrollbar-none">
           {STEPS.map((s) => {
             const Icon = s.icon;
             const isActive = currentStep === s.id;
@@ -188,12 +188,12 @@ export const ReviewPage: React.FC<ReviewPageProps> = ({
                 key={s.id}
                 type="button"
                 onClick={() => setCurrentStep(s.id)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
                   isActive
-                    ? 'bg-brand-orange text-white shadow-sm'
+                    ? 'bg-brand-orange text-white shadow-sm ring-2 ring-brand-orange/20'
                     : isCompleted
-                    ? 'text-content-primary hover:bg-canvas-hover'
-                    : 'text-content-tertiary hover:text-content-primary hover:bg-canvas-hover'
+                    ? 'bg-canvas-subtle text-content-primary hover:bg-canvas-hover'
+                    : 'text-content-tertiary hover:text-content-primary hover:bg-canvas-subtle'
                 }`}
                 title={s.title}
               >
@@ -210,7 +210,7 @@ export const ReviewPage: React.FC<ReviewPageProps> = ({
             type="button"
             onClick={onPrevProject}
             disabled={currentIndex <= 0}
-            className="p-1.5 rounded-lg bg-canvas-card border border-border-subtle text-content-secondary hover:text-content-primary hover:bg-canvas-hover disabled:opacity-30 disabled:cursor-not-allowed transition-colors shadow-sm"
+            className="p-1.5 rounded-lg bg-canvas-card border border-border-subtle text-content-secondary hover:text-content-primary hover:bg-canvas-hover disabled:opacity-30 disabled:cursor-not-allowed transition-colors shadow-sm cursor-pointer"
             title="Previous Submission (P)"
           >
             <ChevronLeft className="w-4 h-4" />
@@ -222,7 +222,7 @@ export const ReviewPage: React.FC<ReviewPageProps> = ({
             type="button"
             onClick={onNextProject}
             disabled={currentIndex >= totalProjects - 1}
-            className="p-1.5 rounded-lg bg-canvas-card border border-border-subtle text-content-secondary hover:text-content-primary hover:bg-canvas-hover disabled:opacity-30 disabled:cursor-not-allowed transition-colors shadow-sm"
+            className="p-1.5 rounded-lg bg-canvas-card border border-border-subtle text-content-secondary hover:text-content-primary hover:bg-canvas-hover disabled:opacity-30 disabled:cursor-not-allowed transition-colors shadow-sm cursor-pointer"
             title="Next Submission (N)"
           >
             <ChevronRight className="w-4 h-4" />
@@ -264,6 +264,16 @@ export const ReviewPage: React.FC<ReviewPageProps> = ({
           )}
 
           {currentStep === 2 && (
+            <SahilIntrospectStage
+              project={project}
+              onAdvance={handleAdvance}
+              onEarlyExit={handleEarlyExit}
+              reviewChecklist={reviewChecklist}
+              onToggleChecklist={toggleChecklist}
+            />
+          )}
+
+          {currentStep === 3 && (
             <ProjectReadmeStage
               project={project}
               gitHubData={gitHubData}
@@ -274,7 +284,7 @@ export const ReviewPage: React.FC<ReviewPageProps> = ({
             />
           )}
 
-          {currentStep === 3 && (
+          {currentStep === 4 && (
             <ShippingDeliverablesStage
               project={project}
               gitHubData={gitHubData}
@@ -285,7 +295,7 @@ export const ReviewPage: React.FC<ReviewPageProps> = ({
             />
           )}
 
-          {currentStep === 4 && (
+          {currentStep === 5 && (
             <CommitsDiffsStage
               project={project}
               gitHubData={gitHubData}
@@ -296,7 +306,7 @@ export const ReviewPage: React.FC<ReviewPageProps> = ({
             />
           )}
 
-          {currentStep === 5 && (
+          {currentStep === 6 && (
             <VerdictDeskStage
               project={project}
               verdict={verdict}

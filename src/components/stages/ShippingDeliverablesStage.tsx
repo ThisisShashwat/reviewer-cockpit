@@ -7,10 +7,10 @@ import {
   PackageCheck,
   RefreshCw,
   Smartphone,
-  Info,
   Code,
 } from 'lucide-react';
 import { CockpitProject, GitHubRepoData } from '../../lib/types';
+import { PassFailControl } from '../common/PassFailControl';
 
 interface ShippingDeliverablesStageProps {
   project: CockpitProject;
@@ -18,7 +18,7 @@ interface ShippingDeliverablesStageProps {
   onAdvance: () => void;
   onEarlyExit?: (reason: string) => void;
   reviewChecklist?: Record<string, boolean>;
-  onToggleChecklist?: (key: string) => void;
+  onToggleChecklist?: (key: string, status?: boolean) => void;
 }
 
 export const ShippingDeliverablesStage: React.FC<ShippingDeliverablesStageProps> = ({
@@ -72,9 +72,15 @@ export const ShippingDeliverablesStage: React.FC<ShippingDeliverablesStageProps>
     return match ? `https://www.youtube.com/embed/${match[1]}` : url;
   };
 
-  const handleCheckbox = (key: string) => {
+  const handlePass = (key: string) => {
     if (onToggleChecklist) {
-      onToggleChecklist(key);
+      onToggleChecklist(key, true);
+    }
+  };
+
+  const handleFail = (key: string) => {
+    if (onToggleChecklist) {
+      onToggleChecklist(key, false);
     }
   };
 
@@ -85,7 +91,7 @@ export const ShippingDeliverablesStage: React.FC<ShippingDeliverablesStageProps>
         <div>
           <div className="flex items-center gap-2">
             <span className="text-xs font-mono font-bold uppercase tracking-wider text-brand-orange bg-brand-orange/10 px-2 py-0.5 rounded border border-brand-orange/20">
-              Stage 2 of 5
+              Stage 4 of 6
             </span>
             <span className="text-xs text-content-tertiary">Deliverables Audit</span>
           </div>
@@ -103,7 +109,7 @@ export const ShippingDeliverablesStage: React.FC<ShippingDeliverablesStageProps>
               <button
                 type="button"
                 onClick={() => setViewportMode('desktop')}
-                className={`p-1.5 rounded-md ${
+                className={`p-1.5 rounded-md cursor-pointer ${
                   viewportMode === 'desktop'
                     ? 'bg-canvas-subtle text-brand-orange'
                     : 'text-content-tertiary hover:text-content-primary'
@@ -115,7 +121,7 @@ export const ShippingDeliverablesStage: React.FC<ShippingDeliverablesStageProps>
               <button
                 type="button"
                 onClick={() => setViewportMode('mobile')}
-                className={`p-1.5 rounded-md ${
+                className={`p-1.5 rounded-md cursor-pointer ${
                   viewportMode === 'mobile'
                     ? 'bg-canvas-subtle text-brand-orange'
                     : 'text-content-tertiary hover:text-content-primary'
@@ -132,153 +138,163 @@ export const ShippingDeliverablesStage: React.FC<ShippingDeliverablesStageProps>
               href={playableUrl}
               target="_blank"
               rel="noreferrer"
-              className="px-3 py-1.5 rounded-lg bg-canvas-card border border-border-subtle text-xs font-medium text-content-secondary hover:text-content-primary hover:bg-canvas-hover flex items-center gap-1.5 transition-colors shadow-sm"
+              className="px-3 py-1.5 rounded-lg bg-canvas-card border border-border-subtle text-xs font-medium text-content-secondary hover:text-content-primary hover:bg-canvas-hover flex items-center gap-1.5 transition-colors shadow-sm cursor-pointer"
             >
-              <span>Open Link</span>
+              <span>Open Demo</span>
               <ExternalLink className="w-3.5 h-3.5" />
             </a>
           )}
         </div>
       </div>
 
-      {/* Host Rule Warning Card */}
+      {/* Host Rule Warning: Sleeping Host or Google Drive */}
       {isProhibitedHost && (
-        <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 flex items-start gap-3 shrink-0">
-          <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-          <div className="text-xs leading-relaxed flex-1">
-            <span className="font-semibold block text-amber-950">
-              Host Guidelines Notice: {playableUrl}
+        <div className="p-4 rounded-xl bg-amber-950/40 border border-amber-500/40 text-amber-200 flex items-start gap-3 text-xs shadow-lg">
+          <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <span className="font-bold text-amber-300 block">
+              Host Compliance Warning: {isStreamlit ? 'Streamlit' : isReplit ? 'Replit' : 'Google Drive'}
             </span>
-            <span>{prohibitedReason}</span>
+            <p className="text-amber-200/90 leading-relaxed">{prohibitedReason}</p>
           </div>
         </div>
       )}
 
-      {/* Criterion #10 Notice (Playable equals Code URL) */}
-      {isDuplicateCodeAndDemo && !hasBinaryReleases && (
-        <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 flex items-start gap-3 shrink-0">
-          <Info className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-          <div className="text-xs leading-relaxed flex-1">
-            <span className="font-semibold block text-amber-950">
-              Criterion #10: Playable URL Points to Repository
+      {/* Duplicate Code and Demo Warning */}
+      {isDuplicateCodeAndDemo && (
+        <div className="p-4 rounded-xl bg-amber-950/40 border border-amber-500/40 text-amber-200 flex items-start gap-3 text-xs shadow-lg">
+          <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <span className="font-bold text-amber-300 block">
+              Playable URL Matches Repository URL
             </span>
-            <span>
-              The playable demo link matches the code repository and no release binaries were detected. If this is a desktop/CLI tool, verify that the README has clear compilation steps or a demo video.
-            </span>
+            <p className="text-amber-200/90 leading-relaxed">
+              The submitter provided their GitHub code repository link in place of a live playable demo or release binary.
+            </p>
           </div>
         </div>
       )}
 
-      {/* Verified GitHub Releases Card */}
-      {releases.length > 0 && (
-        <div className="p-5 rounded-xl bg-canvas-card border border-border-subtle space-y-3 shadow-sm shrink-0">
-          <div className="flex items-center justify-between">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-content-primary flex items-center gap-2">
-              <PackageCheck className="w-4 h-4 text-semantic-success" />
-              Verified GitHub Release Assets ({releases[0].tagName})
-            </h3>
-            <span className="text-[11px] font-mono text-semantic-success font-medium">
-              Desktop / CLI Distribution
+      {/* Binary Releases Card (If Available) */}
+      {hasBinaryReleases && (
+        <div className="p-5 rounded-2xl bg-[#121214] border border-[#27272a] text-white space-y-3 shadow-lg shrink-0">
+          <div className="flex items-center justify-between border-b border-[#27272a] pb-2.5">
+            <div className="flex items-center gap-2">
+              <PackageCheck className="w-4 h-4 text-brand-orange" />
+              <h3 className="text-xs font-bold uppercase tracking-wider text-white">
+                GitHub Release Assets & Executables
+              </h3>
+            </div>
+            <span className="text-xs font-mono text-[#a1a1aa]">
+              {releases.length} release(s) found
             </span>
           </div>
 
-          <div className="space-y-1.5">
-            {releases[0].assets.map((asset, idx) => (
+          <div className="space-y-2">
+            {releases.map((rel) => (
               <div
-                key={idx}
-                className="flex items-center justify-between p-2.5 rounded-lg bg-canvas-subtle border border-border-subtle text-xs"
+                key={rel.id}
+                className="p-3 rounded-xl bg-[#18181b] border border-[#27272a] flex items-center justify-between text-xs"
               >
-                <div className="flex items-center gap-2 min-w-0">
-                  <Download className="w-3.5 h-3.5 text-brand-orange shrink-0" />
-                  <span className="font-mono font-medium text-content-primary truncate">
-                    {asset.name}
-                  </span>
-                  <span className="text-[11px] font-mono text-content-tertiary">
-                    {(asset.size / (1024 * 1024)).toFixed(2)} MB
+                <div>
+                  <span className="font-semibold text-white block">{rel.name || rel.tagName}</span>
+                  <span className="text-[11px] text-[#71717a] font-mono">
+                    Tagged {rel.tagName} • {rel.publishedAt ? new Date(rel.publishedAt).toLocaleDateString() : ''}
                   </span>
                 </div>
-                <a
-                  href={asset.downloadUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="px-2.5 py-1 rounded bg-canvas-card border border-border-subtle text-[11px] text-brand-orange hover:text-orange-600 transition-colors shrink-0 font-medium"
-                >
-                  Download Asset
-                </a>
+
+                <div className="flex items-center gap-2">
+                  {rel.assets.map((asset, aIdx) => (
+                    <a
+                      key={aIdx}
+                      href={asset.downloadUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="px-2.5 py-1 rounded-lg bg-[#27272a] text-white hover:bg-[#333338] text-[11px] font-mono flex items-center gap-1.5 transition-colors"
+                    >
+                      <Download className="w-3 h-3 text-brand-orange" />
+                      <span>{asset.name}</span>
+                      <span className="text-[10px] text-[#a1a1aa]">
+                        ({(asset.size / (1024 * 1024)).toFixed(1)} MB)
+                      </span>
+                    </a>
+                  ))}
+                </div>
               </div>
             ))}
           </div>
         </div>
       )}
 
-      {/* Deliverable Preview Viewport */}
-      <div className="flex-1 min-h-[460px] rounded-xl bg-canvas-card border border-border-subtle flex flex-col overflow-hidden shadow-sm">
-        {/* Browser Chrome Header */}
-        <div className="h-10 bg-canvas-subtle border-b border-border-subtle px-4 flex items-center justify-between text-xs shrink-0">
-          <div className="flex items-center gap-2 flex-1 max-w-xl">
-            <button
-              type="button"
-              onClick={() => setIframeKey((k) => k + 1)}
-              className="p-1 text-content-tertiary hover:text-content-primary rounded hover:bg-canvas"
-              title="Reload frame"
-            >
-              <RefreshCw className="w-3.5 h-3.5" />
-            </button>
-            <div className="flex-1 bg-canvas-card border border-border-subtle rounded-md px-2.5 py-1 text-[11px] font-mono text-content-tertiary truncate">
-              {playableUrl || 'No playable URL specified'}
-            </div>
+      {/* Interactive Deliverable Preview Container (Dark Console Frame) */}
+      <div className="flex-1 min-h-[460px] bg-[#121214] border border-[#27272a] rounded-2xl flex flex-col overflow-hidden shadow-lg">
+        {/* Frame Topbar */}
+        <div className="p-3.5 bg-[#18181b] border-b border-[#27272a] flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+            <span className="text-xs font-mono text-[#d4d4d8] truncate">
+              {playableUrl || 'No playable URL'}
+            </span>
           </div>
-          <span className="text-[11px] text-content-tertiary font-mono">Deliverable Viewport</span>
+
+          <div className="flex items-center gap-2 shrink-0">
+            {!isGitHubUrl && !isYouTube && playableUrl && (
+              <button
+                type="button"
+                onClick={() => setIframeKey((k) => k + 1)}
+                className="p-1 text-[#a1a1aa] hover:text-white rounded hover:bg-[#27272a] cursor-pointer"
+                title="Reload preview"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+              </button>
+            )}
+            <span className="text-[10px] font-mono text-[#71717a] uppercase">
+              {isYouTube ? 'Video Embed' : isGitHubUrl ? 'GitHub Link' : viewportMode}
+            </span>
+          </div>
         </div>
 
         {/* Viewport Frame */}
-        <div className="flex-1 bg-canvas flex items-center justify-center overflow-hidden relative">
+        <div className="flex-1 bg-[#09090b] flex items-center justify-center p-4 overflow-auto">
           {isGitHubUrl ? (
-            /* Safe view for GitHub URL: Never iframe github.com to avoid CSP block */
-            <div className="p-8 text-center max-w-md space-y-3">
-              <div className="w-12 h-12 rounded-xl bg-canvas-card border border-border-subtle flex items-center justify-center mx-auto text-content-primary shadow-sm">
-                <Code className="w-6 h-6 text-brand-orange" />
-              </div>
-              <h4 className="text-sm font-bold text-content-primary font-heading">
-                Repository Deliverable
-              </h4>
-              <p className="text-xs text-content-tertiary leading-relaxed">
-                The playable URL links directly to GitHub. GitHub blocks in-app iframe embedding via strict CSP security policies.
+            <div className="text-center p-8 space-y-3 max-w-md">
+              <Code className="w-8 h-8 text-brand-orange mx-auto" />
+              <h4 className="text-sm font-semibold text-white">Repository Submitted as Playable Deliverable</h4>
+              <p className="text-xs text-[#a1a1aa] leading-relaxed">
+                GitHub URLs block iframe embedding. Review the README for setup steps, or check if releases and build artifacts exist above.
               </p>
-              <div className="pt-2">
-                <a
-                  href={playableUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="px-4 py-2 rounded-lg bg-brand-orange text-white text-xs font-semibold hover:bg-orange-600 transition-colors inline-flex items-center gap-1.5 shadow-sm"
-                >
-                  <span>Open Repository on GitHub</span>
-                  <ExternalLink className="w-3.5 h-3.5" />
-                </a>
-              </div>
+              <a
+                href={playableUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand-orange text-white text-xs font-semibold hover:bg-orange-600 transition-colors"
+              >
+                <span>Open Repository in New Tab</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </a>
             </div>
           ) : isYouTube ? (
-            <iframe
-              key={iframeKey}
-              src={getYouTubeEmbedUrl(playableUrl)}
-              title="Project Demo Video"
-              className="w-full h-full border-0"
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-              allowFullScreen
-            />
+            <div className="w-full h-full max-w-4xl aspect-video rounded-xl overflow-hidden bg-black shadow-lg">
+              <iframe
+                src={getYouTubeEmbedUrl(playableUrl)}
+                title="Video Demonstration"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowFullScreen
+                className="w-full h-full border-0"
+              />
+            </div>
           ) : isDirectVideo ? (
-            <video
-              key={iframeKey}
-              src={playableUrl}
-              controls
-              className="max-w-full max-h-full"
-            />
+            <div className="w-full h-full max-w-4xl flex items-center justify-center bg-black rounded-xl overflow-hidden shadow-lg">
+              <video controls src={playableUrl} className="max-w-full max-h-full">
+                Your browser does not support the video tag.
+              </video>
+            </div>
           ) : playableUrl ? (
             <div
-              className={`h-full transition-all flex flex-col bg-white ${
+              className={`h-full transition-all duration-300 rounded-xl overflow-hidden bg-white ${
                 viewportMode === 'mobile'
-                  ? 'w-[375px] border-x border-border-subtle shadow-md'
-                  : 'w-full'
+                  ? 'w-[375px] shadow-2xl border-2 border-[#27272a]'
+                  : 'w-full shadow-lg'
               }`}
             >
               <iframe
@@ -290,54 +306,46 @@ export const ShippingDeliverablesStage: React.FC<ShippingDeliverablesStageProps>
               />
             </div>
           ) : (
-            <div className="text-xs text-content-tertiary">
+            <div className="text-xs text-[#71717a]">
               No playable URL provided for this submission.
             </div>
           )}
         </div>
       </div>
 
-      {/* Reviewer Compliance Checks */}
-      <div className="p-5 rounded-xl bg-canvas-card border border-border-subtle space-y-3 shadow-sm shrink-0">
-        <h3 className="text-xs font-bold uppercase tracking-wider text-content-primary">
-          Reviewer Compliance Checks
-        </h3>
-        <div className="space-y-2 text-xs">
-          <label className="flex items-center gap-2.5 cursor-pointer select-none p-2 rounded-lg hover:bg-canvas-hover transition-colors">
-            <input
-              type="checkbox"
-              checked={Boolean(reviewChecklist['stage2_playable_running'])}
-              onChange={() => handleCheckbox('stage2_playable_running')}
-              className="rounded border-border text-brand-orange focus:ring-brand-orange w-4 h-4"
-            />
-            <span className="text-content-secondary font-medium">
-              Deliverable is interactive, deployed, or has an accessible video demonstration
-            </span>
-          </label>
+      {/* Interactive Reviewer Pass/Fail Checklist */}
+      <div className="p-5 rounded-2xl bg-[#121214] border border-[#27272a] text-white space-y-3.5 shadow-lg shrink-0">
+        <div className="flex items-center justify-between border-b border-[#27272a] pb-3">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-white">
+            Stage 4 Verification: Shipping & Host Checks
+          </h3>
+          <span className="text-xs text-[#a1a1aa]">Select Pass or Fail for each criterion</span>
+        </div>
 
-          <label className="flex items-center gap-2.5 cursor-pointer select-none p-2 rounded-lg hover:bg-canvas-hover transition-colors">
-            <input
-              type="checkbox"
-              checked={Boolean(reviewChecklist['stage2_host_stable'])}
-              onChange={() => handleCheckbox('stage2_host_stable')}
-              className="rounded border-border text-brand-orange focus:ring-brand-orange w-4 h-4"
-            />
-            <span className="text-content-secondary font-medium">
-              Hosting complies with guidelines (not an ephemeral server that shuts down)
-            </span>
-          </label>
+        <div className="space-y-2.5">
+          <PassFailControl
+            label="Deliverable Executable & Interactive"
+            description="Playable web application, binary release, or high-fidelity video demonstration runs as intended."
+            status={reviewChecklist['stage4_playable_running']}
+            onPass={() => handlePass('stage4_playable_running')}
+            onFail={() => handleFail('stage4_playable_running')}
+          />
 
-          <label className="flex items-center gap-2.5 cursor-pointer select-none p-2 rounded-lg hover:bg-canvas-hover transition-colors">
-            <input
-              type="checkbox"
-              checked={Boolean(reviewChecklist['stage2_not_raw_repo'])}
-              onChange={() => handleCheckbox('stage2_not_raw_repo')}
-              className="rounded border-border text-brand-orange focus:ring-brand-orange w-4 h-4"
-            />
-            <span className="text-content-secondary font-medium">
-              Criterion #10 satisfied (not simply raw uncompiled code without execution instructions)
-            </span>
-          </label>
+          <PassFailControl
+            label="Hosting Complies with Stability Guidelines"
+            description="Hosting is persistent and stable (not sleeping Streamlit/Replit servers or raw Google Drive links)."
+            status={reviewChecklist['stage4_host_stable']}
+            onPass={() => handlePass('stage4_host_stable')}
+            onFail={() => handleFail('stage4_host_stable')}
+          />
+
+          <PassFailControl
+            label="Shipped Product Delivers Claimed Features"
+            description="All core interactive functionality claimed in requested hours is demonstrated in the deliverable."
+            status={reviewChecklist['stage4_features_delivered']}
+            onPass={() => handlePass('stage4_features_delivered')}
+            onFail={() => handleFail('stage4_features_delivered')}
+          />
         </div>
       </div>
 
@@ -360,14 +368,14 @@ export const ShippingDeliverablesStage: React.FC<ShippingDeliverablesStageProps>
                 }
                 setIsFlagging(false);
               }}
-              className="px-3 py-1.5 rounded-lg bg-semantic-danger text-white text-xs font-semibold hover:bg-red-700 transition-colors shrink-0"
+              className="px-3 py-1.5 rounded-lg bg-semantic-danger text-white text-xs font-semibold hover:bg-red-700 transition-colors shrink-0 cursor-pointer"
             >
               Confirm Flag
             </button>
             <button
               type="button"
               onClick={() => setIsFlagging(false)}
-              className="px-2.5 py-1.5 text-xs text-content-tertiary hover:text-content-primary"
+              className="px-2.5 py-1.5 text-xs text-content-tertiary hover:text-content-primary cursor-pointer"
             >
               Cancel
             </button>
@@ -376,7 +384,7 @@ export const ShippingDeliverablesStage: React.FC<ShippingDeliverablesStageProps>
           <button
             type="button"
             onClick={() => setIsFlagging(true)}
-            className="px-3.5 py-2 rounded-lg bg-canvas-card border border-border-subtle text-xs font-semibold text-content-secondary hover:text-semantic-danger hover:border-semantic-dangerBorder transition-colors flex items-center gap-1.5 shadow-sm"
+            className="px-3.5 py-2 rounded-lg bg-canvas-card border border-border-subtle text-xs font-semibold text-content-secondary hover:text-semantic-danger hover:border-semantic-dangerBorder transition-colors flex items-center gap-1.5 shadow-sm cursor-pointer"
           >
             <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
             <span>Flag Deliverable Issue</span>
@@ -386,9 +394,9 @@ export const ShippingDeliverablesStage: React.FC<ShippingDeliverablesStageProps>
         <button
           type="button"
           onClick={onAdvance}
-          className="px-5 py-2 rounded-lg bg-brand-orange text-white hover:bg-orange-600 text-xs font-semibold transition-colors shadow-sm flex items-center gap-1.5"
+          className="px-5 py-2 rounded-lg bg-brand-orange text-white hover:bg-orange-600 text-xs font-semibold transition-colors shadow-sm flex items-center gap-1.5 cursor-pointer"
         >
-          <span>Continue to Commits & Diffs →</span>
+          <span>Continue to Commits & AI Heuristics →</span>
         </button>
       </div>
     </div>

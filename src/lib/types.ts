@@ -228,6 +228,7 @@ export interface GitHubRepoData {
   releases: GitHubRelease[];
   hardwareFiles: GitHubRepoFile[];
   readmeContent?: string;
+  isRateLimited?: boolean;
   isLoading: boolean;
   error?: string;
 }

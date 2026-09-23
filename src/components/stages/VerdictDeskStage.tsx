@@ -3,10 +3,10 @@ import {
   CheckCircle2,
   Copy,
   FileText,
-  Keyboard,
   ShieldCheck,
   AlertCircle,
   Clock,
+  XCircle,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { CockpitProject, VerdictDetails } from '../../lib/types';
@@ -41,7 +41,8 @@ export const VerdictDeskStage: React.FC<VerdictDeskStageProps> = ({
   const [internalNotes, setInternalNotes] = useState<string>(verdict?.internalNotes || '');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const completedChecksCount = Object.values(reviewChecklist).filter(Boolean).length;
+  const passedCount = Object.values(reviewChecklist).filter((v) => v === true).length;
+  const failedCount = Object.values(reviewChecklist).filter((v) => v === false).length;
 
   const handleSubmitVerdict = async () => {
     setIsSubmitting(true);
@@ -91,13 +92,13 @@ export const VerdictDeskStage: React.FC<VerdictDeskStageProps> = ({
   };
 
   return (
-    <div className="h-full overflow-y-auto p-8 space-y-6 max-w-5xl mx-auto select-text">
+    <div className="h-full overflow-y-auto p-8 space-y-6 max-w-5xl mx-auto select-text flex flex-col">
       {/* Stage Header */}
-      <div className="flex items-start justify-between pb-5 border-b border-border-subtle">
+      <div className="flex items-start justify-between pb-5 border-b border-border-subtle shrink-0">
         <div>
           <div className="flex items-center gap-2">
             <span className="text-xs font-mono font-bold uppercase tracking-wider text-brand-orange bg-brand-orange/10 px-2 py-0.5 rounded border border-brand-orange/20">
-              Stage 5 of 5
+              Stage 6 of 6
             </span>
             <span className="text-xs text-content-tertiary">Final Verdict Desk</span>
           </div>
@@ -113,7 +114,7 @@ export const VerdictDeskStage: React.FC<VerdictDeskStageProps> = ({
           <button
             type="button"
             onClick={onOpenAdminDesk}
-            className="px-3.5 py-1.5 rounded-lg bg-canvas-card border border-border-subtle text-xs font-semibold text-content-secondary hover:text-content-primary hover:bg-canvas-hover flex items-center gap-1.5 transition-colors shadow-sm"
+            className="px-3.5 py-1.5 rounded-lg bg-canvas-card border border-border-subtle text-xs font-semibold text-content-secondary hover:text-content-primary hover:bg-canvas-hover flex items-center gap-1.5 transition-colors shadow-sm cursor-pointer"
           >
             <ShieldCheck className="w-3.5 h-3.5 text-brand-orange" />
             <span>Admin Export Desk</span>
@@ -121,113 +122,120 @@ export const VerdictDeskStage: React.FC<VerdictDeskStageProps> = ({
         )}
       </div>
 
-      {/* Review Checklist Summary Strip */}
-      <div className="p-4 rounded-xl bg-canvas-card border border-border-subtle flex items-center justify-between shadow-sm">
+      {/* Review Checklist Summary Strip (Dark Console Card) */}
+      <div className="p-4 rounded-xl bg-[#121214] border border-[#27272a] text-white flex items-center justify-between shadow-lg shrink-0">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-lg bg-emerald-50 border border-emerald-200 flex items-center justify-center text-semantic-success">
+          <div className="w-9 h-9 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
             <CheckCircle2 className="w-5 h-5" />
           </div>
           <div>
-            <span className="text-xs font-bold text-content-primary block">
-              Audit Checklist Completed ({completedChecksCount} criteria satisfied)
+            <span className="text-xs font-bold text-white block">
+              Audit Checklist Synthesis
             </span>
-            <span className="text-[11px] text-content-tertiary">
-              Checked across Hackatime, Manifest, Deliverable, Commits, and AI heuristics.
+            <span className="text-[11px] text-[#a1a1aa]">
+              Checked across Hackatime, History, Introspect, README, Deliverable, and Commits.
             </span>
           </div>
         </div>
 
-        <span className="text-xs font-mono font-semibold px-2.5 py-1 rounded bg-canvas-subtle border border-border-subtle text-content-secondary">
-          {completedChecksCount} checks
-        </span>
+        <div className="flex items-center gap-2 font-mono text-xs">
+          <span className="px-2.5 py-1 rounded-md bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-bold">
+            {passedCount} Passed
+          </span>
+          {failedCount > 0 && (
+            <span className="px-2.5 py-1 rounded-md bg-rose-500/10 border border-rose-500/30 text-rose-400 font-bold">
+              {failedCount} Concerns
+            </span>
+          )}
+        </div>
       </div>
 
-      {/* Verdict Controls Card */}
-      <div className="p-6 rounded-xl bg-canvas-card border border-border-subtle space-y-5 shadow-sm">
-        <h3 className="text-xs font-bold uppercase tracking-wider text-content-primary">
+      {/* Verdict Controls Card (Dark Console Card) */}
+      <div className="p-6 rounded-2xl bg-[#121214] border border-[#27272a] text-white space-y-5 shadow-lg shrink-0">
+        <h3 className="text-xs font-bold uppercase tracking-wider text-white">
           Decision Action
         </h3>
 
         {/* Action Toggle Pills */}
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <button
             type="button"
             onClick={() => setAction('pre_approve')}
-            className={`p-3.5 rounded-xl border text-left transition-all ${
+            className={`p-4 rounded-xl border text-left transition-all cursor-pointer ${
               action === 'pre_approve'
-                ? 'bg-emerald-50 border-emerald-300 ring-2 ring-emerald-500/20 shadow-sm'
-                : 'bg-canvas-card border-border-subtle hover:bg-canvas-hover'
+                ? 'bg-emerald-950/40 border-emerald-500/50 ring-2 ring-emerald-500/20 text-white shadow-lg'
+                : 'bg-[#18181b] border-[#27272a] text-[#a1a1aa] hover:border-[#3f3f46]'
             }`}
           >
             <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-content-primary">Pre-Approve</span>
+              <span className="text-xs font-bold text-white">Pre-Approve</span>
               <CheckCircle2
                 className={`w-4 h-4 ${
-                  action === 'pre_approve' ? 'text-semantic-success' : 'text-content-muted'
+                  action === 'pre_approve' ? 'text-emerald-400' : 'text-[#71717a]'
                 }`}
               />
             </div>
-            <p className="text-[11px] text-content-tertiary mt-1">
-              Project meets technical criteria and hours are verified.
+            <p className="text-[11px] text-[#a1a1aa] mt-1.5 leading-relaxed">
+              Project meets technical criteria, code is verified, and hours are plausible.
             </p>
           </button>
 
           <button
             type="button"
             onClick={() => setAction('reject')}
-            className={`p-3.5 rounded-xl border text-left transition-all ${
+            className={`p-4 rounded-xl border text-left transition-all cursor-pointer ${
               action === 'reject'
-                ? 'bg-red-50 border-red-300 ring-2 ring-red-500/20 shadow-sm'
-                : 'bg-canvas-card border-border-subtle hover:bg-canvas-hover'
+                ? 'bg-rose-950/40 border-rose-500/50 ring-2 ring-rose-500/20 text-white shadow-lg'
+                : 'bg-[#18181b] border-[#27272a] text-[#a1a1aa] hover:border-[#3f3f46]'
             }`}
           >
             <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-content-primary">Flag for Rejection</span>
-              <AlertCircle
+              <span className="text-xs font-bold text-white">Flag for Rejection</span>
+              <XCircle
                 className={`w-4 h-4 ${
-                  action === 'reject' ? 'text-semantic-danger' : 'text-content-muted'
+                  action === 'reject' ? 'text-rose-400' : 'text-[#71717a]'
                 }`}
               />
             </div>
-            <p className="text-[11px] text-content-tertiary mt-1">
-              Does not satisfy GitBook requirements or deliverable is broken.
+            <p className="text-[11px] text-[#a1a1aa] mt-1.5 leading-relaxed">
+              Does not satisfy GitBook rules, deliverable broken, or uncredited double-dip.
             </p>
           </button>
 
           <button
             type="button"
             onClick={() => setAction('flag_fraud')}
-            className={`p-3.5 rounded-xl border text-left transition-all ${
+            className={`p-4 rounded-xl border text-left transition-all cursor-pointer ${
               action === 'flag_fraud'
-                ? 'bg-amber-50 border-amber-300 ring-2 ring-amber-500/20 shadow-sm'
-                : 'bg-canvas-card border-border-subtle hover:bg-canvas-hover'
+                ? 'bg-amber-950/40 border-amber-500/50 ring-2 ring-amber-500/20 text-white shadow-lg'
+                : 'bg-[#18181b] border-[#27272a] text-[#a1a1aa] hover:border-[#3f3f46]'
             }`}
           >
             <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-content-primary">Flag Fraud</span>
+              <span className="text-xs font-bold text-white">Flag Fraud</span>
               <AlertCircle
                 className={`w-4 h-4 ${
-                  action === 'flag_fraud' ? 'text-amber-600' : 'text-content-muted'
+                  action === 'flag_fraud' ? 'text-amber-400' : 'text-[#71717a]'
                 }`}
               />
             </div>
-            <p className="text-[11px] text-content-tertiary mt-1">
-              Stolen code, bot scripts, or deliberate bad faith submission.
+            <p className="text-[11px] text-[#a1a1aa] mt-1.5 leading-relaxed">
+              Stolen code, automated bots, or deliberate bad faith submission.
             </p>
           </button>
         </div>
 
         {/* Hours Adjustment */}
         {action === 'pre_approve' && (
-          <div className="p-4 rounded-xl bg-canvas-subtle border border-border-subtle space-y-3">
-            <span className="text-xs font-bold uppercase tracking-wider text-content-primary flex items-center gap-1.5">
+          <div className="p-4 rounded-xl bg-[#18181b] border border-[#27272a] space-y-3">
+            <span className="text-xs font-bold uppercase tracking-wider text-white flex items-center gap-1.5">
               <Clock className="w-3.5 h-3.5 text-brand-orange" />
               Hours Granted
             </span>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="text-[11px] text-content-tertiary block mb-1">
+                <label className="text-[11px] text-[#a1a1aa] block mb-1">
                   Approved Hours (Claimed: {project.submittedHours} hrs)
                 </label>
                 <input
@@ -237,12 +245,12 @@ export const VerdictDeskStage: React.FC<VerdictDeskStageProps> = ({
                   max="100"
                   value={approvedHours}
                   onChange={(e) => setApprovedHours(parseFloat(e.target.value) || 0)}
-                  className="w-full px-3 py-1.5 rounded-lg border border-border bg-canvas-card text-xs font-mono font-bold text-content-primary focus:outline-none focus:border-brand-orange"
+                  className="w-full px-3 py-2 rounded-lg border border-[#27272a] bg-[#121214] text-xs font-mono font-bold text-emerald-400 focus:outline-none focus:border-brand-orange"
                 />
               </div>
 
               <div>
-                <label className="text-[11px] text-content-tertiary block mb-1">
+                <label className="text-[11px] text-[#a1a1aa] block mb-1">
                   Deflated / Deducted Hours (AI or Prior Submissions)
                 </label>
                 <input
@@ -251,7 +259,7 @@ export const VerdictDeskStage: React.FC<VerdictDeskStageProps> = ({
                   min="0"
                   value={deflatedHours}
                   onChange={(e) => setDeflatedHours(parseFloat(e.target.value) || 0)}
-                  className="w-full px-3 py-1.5 rounded-lg border border-border bg-canvas-card text-xs font-mono text-content-secondary focus:outline-none focus:border-brand-orange"
+                  className="w-full px-3 py-2 rounded-lg border border-[#27272a] bg-[#121214] text-xs font-mono text-[#d4d4d8] focus:outline-none focus:border-brand-orange"
                 />
               </div>
             </div>
@@ -261,14 +269,14 @@ export const VerdictDeskStage: React.FC<VerdictDeskStageProps> = ({
         {/* Justification Textarea */}
         <div className="space-y-2">
           <div className="flex items-center justify-between">
-            <label className="text-xs font-bold uppercase tracking-wider text-content-primary flex items-center gap-1.5">
+            <label className="text-xs font-bold uppercase tracking-wider text-white flex items-center gap-1.5">
               <FileText className="w-3.5 h-3.5 text-brand-orange" />
               Decision Justification
             </label>
             <button
               type="button"
               onClick={copyJustification}
-              className="text-[11px] text-brand-orange hover:underline inline-flex items-center gap-1 font-medium"
+              className="text-[11px] text-brand-orange hover:underline inline-flex items-center gap-1 font-medium cursor-pointer"
             >
               <Copy className="w-3 h-3" />
               <span>Copy</span>
@@ -278,70 +286,50 @@ export const VerdictDeskStage: React.FC<VerdictDeskStageProps> = ({
             rows={3}
             value={justification}
             onChange={(e) => setJustification(e.target.value)}
-            placeholder="Write clear rationale for this decision..."
-            className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-canvas-card text-xs text-content-primary focus:outline-none focus:border-brand-orange leading-relaxed"
+            placeholder="Technical verification summary for admin clipboard export..."
+            className="w-full p-3 rounded-xl border border-[#27272a] bg-[#18181b] text-xs text-[#d4d4d8] focus:outline-none focus:border-brand-orange leading-relaxed"
           />
         </div>
 
         {/* Internal Reviewer Notes */}
         <div className="space-y-2">
-          <label className="text-xs font-bold uppercase tracking-wider text-content-primary block">
-            Internal Note (Logged to Cockpit Audit History)
+          <label className="text-xs font-bold uppercase tracking-wider text-white">
+            Internal Reviewer Notes (Audit Log)
           </label>
-          <input
-            type="text"
+          <textarea
+            rows={2}
             value={internalNotes}
             onChange={(e) => setInternalNotes(e.target.value)}
-            placeholder="Optional internal note for other reviewers..."
-            className="w-full px-3.5 py-2 rounded-xl border border-border bg-canvas-card text-xs text-content-primary focus:outline-none focus:border-brand-orange"
+            placeholder="Optional internal reviewer commentary (visible in project audit log)..."
+            className="w-full p-3 rounded-xl border border-[#27272a] bg-[#18181b] text-xs text-[#d4d4d8] focus:outline-none focus:border-brand-orange leading-relaxed"
           />
         </div>
 
         {/* Submit Button */}
-        <div className="pt-2 flex justify-end">
+        <div className="pt-2 flex items-center justify-end">
           <button
             type="button"
-            disabled={isSubmitting}
             onClick={handleSubmitVerdict}
-            className="px-6 py-2.5 rounded-xl bg-brand-orange hover:bg-orange-600 text-white text-xs font-bold transition-all shadow-sm flex items-center gap-2 disabled:opacity-50"
+            disabled={isSubmitting}
+            className={`px-6 py-2.5 rounded-xl font-bold text-xs flex items-center gap-2 transition-all shadow-md cursor-pointer ${
+              action === 'pre_approve'
+                ? 'bg-emerald-600 text-white hover:bg-emerald-500'
+                : action === 'reject'
+                ? 'bg-rose-600 text-white hover:bg-rose-500'
+                : 'bg-amber-600 text-white hover:bg-amber-500'
+            }`}
           >
             <ShieldCheck className="w-4 h-4" />
-            <span>{isSubmitting ? 'Recording Verdict...' : 'Submit Technical Verdict'}</span>
+            <span>
+              {isSubmitting
+                ? 'Recording...'
+                : action === 'pre_approve'
+                ? `Confirm Pre-Approval (${approvedHours} hrs)`
+                : action === 'reject'
+                ? 'Confirm Rejection Flag'
+                : 'Confirm Fraud Flag'}
+            </span>
           </button>
-        </div>
-      </div>
-
-      {/* Keyboard Shortcuts Reference */}
-      <div className="p-4 rounded-xl bg-canvas-card border border-border-subtle shadow-sm">
-        <h4 className="text-xs font-bold text-content-primary uppercase tracking-wider flex items-center gap-2 mb-3">
-          <Keyboard className="w-4 h-4 text-brand-orange" />
-          Reviewer Keyboard Shortcuts
-        </h4>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
-          <div className="p-2 rounded bg-canvas-subtle border border-border-subtle flex items-center justify-between">
-            <span className="text-content-secondary">Next Project</span>
-            <kbd className="px-1.5 py-0.5 rounded bg-canvas-card border border-border-subtle font-mono text-[11px] font-bold text-content-primary">
-              N
-            </kbd>
-          </div>
-          <div className="p-2 rounded bg-canvas-subtle border border-border-subtle flex items-center justify-between">
-            <span className="text-content-secondary">Previous Project</span>
-            <kbd className="px-1.5 py-0.5 rounded bg-canvas-card border border-border-subtle font-mono text-[11px] font-bold text-content-primary">
-              P
-            </kbd>
-          </div>
-          <div className="p-2 rounded bg-canvas-subtle border border-border-subtle flex items-center justify-between">
-            <span className="text-content-secondary">Notes Drawer</span>
-            <kbd className="px-1.5 py-0.5 rounded bg-canvas-card border border-border-subtle font-mono text-[11px] font-bold text-content-primary">
-              S
-            </kbd>
-          </div>
-          <div className="p-2 rounded bg-canvas-subtle border border-border-subtle flex items-center justify-between">
-            <span className="text-content-secondary">Queue Return</span>
-            <kbd className="px-1.5 py-0.5 rounded bg-canvas-card border border-border-subtle font-mono text-[11px] font-bold text-content-primary">
-              Esc
-            </kbd>
-          </div>
         </div>
       </div>
     </div>

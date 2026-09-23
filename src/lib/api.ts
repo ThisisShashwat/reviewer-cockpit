@@ -53,7 +53,9 @@ export async function fetchGitHubRepoData(codeUrl: string): Promise<Partial<GitH
   const { owner, repo } = parsed;
 
   try {
-    // 1. Fetch Repository Info
+    let isRateLimited = false;
+    let repoJson: any = {};
+
     const repoRes = await fetch(`https://api.github.com/repos/${owner}/${repo}`);
     if (repoRes.status === 404) {
       return {
@@ -64,93 +66,105 @@ export async function fetchGitHubRepoData(codeUrl: string): Promise<Partial<GitH
       };
     }
     if (repoRes.status === 403) {
-      return {
-        owner,
-        repo,
-        isLoading: false,
-        error: 'GitHub unauthenticated API rate limit (60 req/hr) reached.'
-      };
+      isRateLimited = true;
+    } else if (repoRes.ok) {
+      repoJson = await repoRes.json();
     }
-
-    const repoJson = await repoRes.json();
 
     // 2. Fetch Commits list (last 15)
     let commits: GitHubRepoData['commits'] = [];
-    try {
-      const commitsRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/commits?per_page=15`);
-      if (commitsRes.ok) {
-        const commitsJson = await commitsRes.json();
-        
-        // Fetch detailed stats (additions, deletions, files) for each commit in parallel
-        commits = await Promise.all(
-          (commitsJson || []).slice(0, 10).map(async (c: any) => {
-            let additions = 0;
-            let deletions = 0;
-            let files: any[] = [];
-            let htmlUrl = c.html_url || `https://github.com/${owner}/${repo}/commit/${c.sha}`;
+    if (!isRateLimited) {
+      try {
+        const commitsRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/commits?per_page=15`);
+        if (commitsRes.status === 403) {
+          isRateLimited = true;
+        } else if (commitsRes.ok) {
+          const commitsJson = await commitsRes.json();
+          
+          // Fetch detailed stats (additions, deletions, files) for each commit in parallel
+          commits = await Promise.all(
+            (commitsJson || []).slice(0, 10).map(async (c: any) => {
+              let additions = 0;
+              let deletions = 0;
+              let files: any[] = [];
+              let htmlUrl = c.html_url || `https://github.com/${owner}/${repo}/commit/${c.sha}`;
 
-            try {
-              const detailRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/commits/${c.sha}`);
-              if (detailRes.ok) {
-                const detailJson = await detailRes.json();
-                additions = detailJson.stats?.additions || 0;
-                deletions = detailJson.stats?.deletions || 0;
-                htmlUrl = detailJson.html_url || htmlUrl;
-                files = (detailJson.files || []).map((f: any) => ({
-                  filename: f.filename,
-                  additions: f.additions,
-                  deletions: f.deletions,
-                  status: f.status
-                }));
+              try {
+                const detailRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/commits/${c.sha}`);
+                if (detailRes.ok) {
+                  const detailJson = await detailRes.json();
+                  additions = detailJson.stats?.additions || 0;
+                  deletions = detailJson.stats?.deletions || 0;
+                  htmlUrl = detailJson.html_url || htmlUrl;
+                  files = (detailJson.files || []).map((f: any) => ({
+                    filename: f.filename,
+                    additions: f.additions,
+                    deletions: f.deletions,
+                    status: f.status
+                  }));
+                }
+              } catch {
+                // detail fetch non-fatal
               }
-            } catch {
-              // detail fetch non-fatal
-            }
 
-            return {
-              sha: c.sha,
-              shortSha: (c.sha || '').substring(0, 7),
-              message: c.commit?.message || '',
-              author: c.commit?.author?.name || c.author?.login || 'Unknown',
-              date: c.commit?.author?.date || '',
-              htmlUrl,
-              additions,
-              deletions,
-              files
-            };
-          })
-        );
+              return {
+                sha: c.sha,
+                shortSha: (c.sha || '').substring(0, 7),
+                message: c.commit?.message || '',
+                author: c.commit?.author?.name || c.author?.login || 'Unknown',
+                date: c.commit?.author?.date || '',
+                htmlUrl,
+                additions,
+                deletions,
+                files
+              };
+            })
+          );
+        }
+      } catch {
+        // Commits fetch non-fatal
       }
-    } catch {
-      // Commits fetch non-fatal
     }
 
     // 3. Fetch Root Contents / File Tree
     let files: GitHubRepoData['files'] = [];
-    try {
-      const contentsRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents`);
-      if (contentsRes.ok) {
-        const contentsJson = await contentsRes.json();
-        files = (contentsJson || []).map((f: any) => ({
-          name: f.name,
-          path: f.path,
-          size: f.size,
-          type: f.type === 'dir' ? 'dir' : 'file'
-        }));
+    if (!isRateLimited) {
+      try {
+        const contentsRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents`);
+        if (contentsRes.ok) {
+          const contentsJson = await contentsRes.json();
+          files = (contentsJson || []).map((f: any) => ({
+            name: f.name,
+            path: f.path,
+            size: f.size,
+            type: f.type === 'dir' ? 'dir' : 'file'
+          }));
+        }
+      } catch {
+        // File tree fetch non-fatal
       }
-    } catch {
-      // File tree fetch non-fatal
     }
 
-    // 4. Fetch README markdown directly via raw.githubusercontent.com
+    // 4. Fetch README markdown directly via raw.githubusercontent.com (No GitHub API rate limit)
     let readmeContent: string | undefined = undefined;
-    try {
-      const readmeRes = await fetch(`https://raw.githubusercontent.com/${owner}/${repo}/HEAD/README.md`);
-      if (readmeRes.ok) {
-        readmeContent = await readmeRes.text();
+    const candidateBranches = Array.from(
+      new Set([repoJson.default_branch, 'main', 'master'].filter(Boolean) as string[])
+    );
+    const readmeFilenames = ['README.md', 'readme.md', 'README', 'Readme.md'];
+
+    for (const b of candidateBranches) {
+      if (readmeContent) break;
+      for (const fn of readmeFilenames) {
+        try {
+          const readmeRes = await fetch(`https://raw.githubusercontent.com/${owner}/${repo}/${b}/${fn}`);
+          if (readmeRes.ok) {
+            readmeContent = await readmeRes.text();
+            break;
+          }
+        } catch {
+          // ignore branch check
+        }
       }
-    } catch {
-      // README fetch non-fatal
     }
 
     // 5. Fetch GitHub Releases
@@ -201,6 +215,7 @@ export async function fetchGitHubRepoData(codeUrl: string): Promise<Partial<GitH
       releases,
       hardwareFiles,
       readmeContent,
+      isRateLimited,
       isLoading: false
     };
   } catch (err: any) {

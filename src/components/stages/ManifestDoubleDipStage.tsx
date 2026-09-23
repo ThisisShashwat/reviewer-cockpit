@@ -6,6 +6,9 @@ import {
   RefreshCw,
   Search,
   Ship,
+  CheckCircle2,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { fetchHalceonProfile, fetchManifestLookup } from '../../lib/api';
 import {
@@ -13,6 +16,7 @@ import {
   HalceonProfileData,
   ManifestLookupData,
 } from '../../lib/types';
+import { PassFailControl } from '../common/PassFailControl';
 
 interface ManifestDoubleDipStageProps {
   project: CockpitProject;
@@ -21,8 +25,43 @@ interface ManifestDoubleDipStageProps {
   onEarlyExit?: (reason: string) => void;
   onApplyDeltaHours?: (hours: number, justification: string) => void;
   reviewChecklist?: Record<string, boolean>;
-  onToggleChecklist?: (key: string) => void;
+  onToggleChecklist?: (key: string, status?: boolean) => void;
 }
+
+const ExpandableDescription: React.FC<{ text: string; maxLen?: number }> = ({
+  text,
+  maxLen = 140,
+}) => {
+  const [expanded, setExpanded] = useState(false);
+
+  if (!text) return <span className="text-[#71717a] italic">No description provided</span>;
+  if (text.length <= maxLen) return <span className="text-[#d4d4d8] leading-relaxed">{text}</span>;
+
+  return (
+    <div className="space-y-1">
+      <p className="text-[#d4d4d8] leading-relaxed whitespace-pre-wrap">
+        {expanded ? text : `${text.slice(0, maxLen)}...`}
+      </p>
+      <button
+        type="button"
+        onClick={() => setExpanded(!expanded)}
+        className="text-[11px] font-semibold text-brand-orange hover:underline inline-flex items-center gap-0.5 cursor-pointer"
+      >
+        {expanded ? (
+          <>
+            <span>View less</span>
+            <ChevronUp className="w-3 h-3" />
+          </>
+        ) : (
+          <>
+            <span>View more</span>
+            <ChevronDown className="w-3 h-3" />
+          </>
+        )}
+      </button>
+    </div>
+  );
+};
 
 export const ManifestDoubleDipStage: React.FC<ManifestDoubleDipStageProps> = ({
   project,
@@ -96,6 +135,25 @@ export const ManifestDoubleDipStage: React.FC<ManifestDoubleDipStageProps> = ({
     return repoClean && halceonRepoClean && (halceonRepoClean.includes(repoClean) || repoClean.includes(halceonRepoClean));
   });
 
+  // Check if similar project name exists in past ships
+  const currentProjNameClean = project.projectName.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const similarHalceonShip = halceonShips.find((s) => {
+    const otherClean = s.repo.toLowerCase().replace(/[^a-z0-9]/g, '');
+    return (
+      s !== matchingHalceonShip &&
+      currentProjNameClean.length >= 4 &&
+      (otherClean.includes(currentProjNameClean) || currentProjNameClean.includes(otherClean))
+    );
+  });
+
+  const similarLiveSubmission = userPastLiveSubmissions.find((p) => {
+    const otherClean = p.projectName.toLowerCase().replace(/[^a-z0-9]/g, '');
+    return (
+      currentProjNameClean.length >= 4 &&
+      (otherClean.includes(currentProjNameClean) || currentProjNameClean.includes(otherClean))
+    );
+  });
+
   const priorApprovedHours = matchingHalceonShip ? matchingHalceonShip.hours : 0;
   const isDoubleDipDetected = Boolean(matchingHalceonShip);
   const netDeltaHours = Math.max(
@@ -103,20 +161,26 @@ export const ManifestDoubleDipStage: React.FC<ManifestDoubleDipStageProps> = ({
     Math.round((project.submittedHours - priorApprovedHours) * 10) / 10
   );
 
-  const handleCheckbox = (key: string) => {
+  const handlePass = (key: string) => {
     if (onToggleChecklist) {
-      onToggleChecklist(key);
+      onToggleChecklist(key, true);
+    }
+  };
+
+  const handleFail = (key: string) => {
+    if (onToggleChecklist) {
+      onToggleChecklist(key, false);
     }
   };
 
   return (
-    <div className="h-full overflow-y-auto p-8 space-y-6 max-w-5xl mx-auto">
+    <div className="h-full overflow-y-auto p-8 space-y-6 max-w-5xl mx-auto flex flex-col">
       {/* Stage Header */}
-      <div className="flex items-start justify-between pb-5 border-b border-border-subtle">
+      <div className="flex items-start justify-between pb-5 border-b border-border-subtle shrink-0">
         <div>
           <div className="flex items-center gap-2">
             <span className="text-xs font-mono font-bold uppercase tracking-wider text-brand-orange bg-brand-orange/10 px-2 py-0.5 rounded border border-brand-orange/20">
-              Stage 1 of 5
+              Stage 1 of 6
             </span>
             <span className="text-xs text-content-tertiary">Cross-Program Audit</span>
           </div>
@@ -124,7 +188,7 @@ export const ManifestDoubleDipStage: React.FC<ManifestDoubleDipStageProps> = ({
             Consolidated Past Submissions (Live & Halceon Unified)
           </h2>
           <p className="text-xs text-content-tertiary mt-1 max-w-2xl">
-            Audit submitter @<strong className="text-content-primary">{project.githubUsername}</strong> across all Hack Club programs (Stardance, Arcade, High Seas, Blot, Horizons) directly inline.
+            Audit submitter @<strong className="text-content-primary">{project.githubUsername}</strong> across all Hack Club programs (Stardance, Arcade, High Seas, Blot, Horizons) directly inline without external context switches.
           </p>
         </div>
 
@@ -149,227 +213,253 @@ export const ManifestDoubleDipStage: React.FC<ManifestDoubleDipStageProps> = ({
         </div>
       ) : (
         <>
-          {/* Double-Dip Warning Banner if repository was previously shipped */}
-          {isDoubleDipDetected && matchingHalceonShip && (
-            <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 space-y-2">
+          {/* Automated Detection Checks Banner at Top */}
+          {isDoubleDipDetected && matchingHalceonShip ? (
+            <div className="p-4 rounded-xl bg-amber-950/40 border border-amber-500/40 text-amber-200 space-y-3 shadow-lg">
               <div className="flex items-start gap-2.5">
-                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
                 <div className="text-xs flex-1">
-                  <span className="font-semibold block text-amber-950">
-                    Repository Previously Shipped in {matchingHalceonShip.program} ({matchingHalceonShip.hours} hrs)
+                  <span className="font-bold text-sm block text-amber-300">
+                    Automated Alert: Repository Previously Shipped in {matchingHalceonShip.program} ({matchingHalceonShip.hours} hrs)
                   </span>
-                  <p className="mt-0.5 text-amber-800">
-                    This repository was already approved in {matchingHalceonShip.program} on {matchingHalceonShip.approvedAt}.
-                    Only verifiable NEW work and incremental features can be granted hours.
+                  <p className="mt-1 text-amber-200/90 leading-relaxed">
+                    This exact repository was already approved in {matchingHalceonShip.program} on {matchingHalceonShip.approvedAt}.
+                    Under Hack Club guidelines, double-dipping without verifiable new features is prohibited.
                   </p>
                 </div>
               </div>
 
-              <div className="p-3 rounded-lg bg-amber-100/70 border border-amber-300 flex items-center justify-between text-xs font-mono">
-                <span className="font-semibold text-amber-950">Suggested Net Delta Hours:</span>
-                <span className="text-sm font-bold text-amber-950">
+              <div className="p-3 rounded-lg bg-[#121214] border border-[#27272a] flex items-center justify-between text-xs font-mono">
+                <span className="text-[#a1a1aa]">Calculated Net Delta Hours:</span>
+                <span className="text-sm font-bold text-amber-400">
                   {netDeltaHours} hrs (Claimed {project.submittedHours}h - Prior {priorApprovedHours}h)
                 </span>
               </div>
             </div>
+          ) : similarHalceonShip || similarLiveSubmission ? (
+            <div className="p-4 rounded-xl bg-amber-950/30 border border-amber-500/30 text-amber-200 flex items-start gap-2.5 text-xs shadow-lg">
+              <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+              <div>
+                <span className="font-bold text-amber-300 block">
+                  Similarity Notice: Prior Project with Similar Name Detected
+                </span>
+                <span className="text-amber-200/90 mt-0.5 block">
+                  Prior submission &ldquo;{similarHalceonShip ? similarHalceonShip.repo : similarLiveSubmission?.projectName}&rdquo; detected. Verify that code is distinct and not duplicated.
+                </span>
+              </div>
+            </div>
+          ) : (
+            <div className="p-4 rounded-xl bg-[#121214] border border-emerald-500/30 text-white flex items-center justify-between text-xs shadow-lg">
+              <div className="flex items-center gap-2.5">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                <div>
+                  <span className="font-bold text-emerald-400 block">Automated Cross-Check: Clean Submission</span>
+                  <span className="text-[#a1a1aa] block text-[11px] mt-0.5">
+                    No duplicate repositories or conflicting prior approvals detected in Halceon Unified or Hack Club Live records.
+                  </span>
+                </div>
+              </div>
+              <span className="px-2.5 py-1 rounded-md text-[11px] font-mono font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shrink-0">
+                0 Prior Collisions
+              </span>
+            </div>
           )}
 
-          {/* Section 1: Halceon Cross-YSWS Ships (Rendered directly inline as user demanded!) */}
-          <div className="p-5 rounded-xl bg-canvas-card border border-border-subtle space-y-3 shadow-sm">
-            <div className="flex items-center justify-between">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-content-primary flex items-center gap-2">
+          {/* Section 1: Halceon Unified Ships (Card-based, zero horizontal scrolling) */}
+          <div className="p-5 rounded-2xl bg-[#121214] border border-[#27272a] text-white space-y-4 shadow-lg">
+            <div className="flex items-center justify-between border-b border-[#27272a] pb-3">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-white flex items-center gap-2">
                 <Ship className="w-4 h-4 text-brand-orange" />
                 Halceon Unified Submissions ({halceonTotalShips} ships across programs)
               </h3>
-              <span className="text-xs font-mono font-semibold px-2 py-0.5 rounded bg-canvas-subtle border border-border-subtle text-content-secondary">
+              <span className="text-xs font-mono font-semibold px-2 py-0.5 rounded bg-[#1f1f23] border border-[#27272a] text-[#a1a1aa]">
                 {halceonTotalHours} hrs shipped total
               </span>
             </div>
 
             {halceonShips.length === 0 ? (
-              <div className="py-4 text-xs text-content-tertiary bg-canvas-subtle p-3 rounded-lg border border-border-subtle">
-                No past ships found in the Halceon Unified database for @{project.githubUsername}.
+              <div className="py-4 text-xs text-[#a1a1aa] bg-[#18181b] p-3 rounded-xl border border-[#27272a]">
+                No past ships recorded in the Halceon Unified database for @{project.githubUsername}.
               </div>
             ) : (
-              <div className="overflow-x-auto border border-border-subtle rounded-lg">
-                <table className="w-full text-left text-xs border-collapse">
-                  <thead>
-                    <tr className="border-b border-border-subtle bg-canvas-subtle text-content-tertiary uppercase font-semibold text-[11px]">
-                      <th className="py-2.5 px-3">Program</th>
-                      <th className="py-2.5 px-3">Repository</th>
-                      <th className="py-2.5 px-3">Description</th>
-                      <th className="py-2.5 px-3">Hours</th>
-                      <th className="py-2.5 px-3">Approved Date</th>
-                      <th className="py-2.5 px-3 text-right">Links</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border-subtle">
-                    {halceonShips.map((ship, idx) => (
-                      <tr key={idx} className="hover:bg-canvas-hover transition-colors">
-                        <td className="py-2.5 px-3">
-                          <span className="px-2 py-0.5 rounded text-[11px] font-mono font-semibold bg-brand-orange/10 text-brand-orange border border-brand-orange/20">
-                            {ship.program}
-                          </span>
-                        </td>
-                        <td className="py-2.5 px-3 font-mono font-semibold text-content-primary">
+              <div className="space-y-3">
+                {halceonShips.map((ship, idx) => (
+                  <div
+                    key={idx}
+                    className="p-4 rounded-xl bg-[#18181b] border border-[#27272a] hover:border-[#3f3f46] transition-colors space-y-2.5"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-center gap-2 flex-wrap min-w-0">
+                        <span className="px-2 py-0.5 rounded text-[11px] font-mono font-bold uppercase bg-brand-orange/20 text-brand-orange border border-brand-orange/30">
+                          {ship.program}
+                        </span>
+                        <span className="font-mono font-bold text-white text-xs truncate">
                           {ship.repo}
-                        </td>
-                        <td className="py-2.5 px-3 text-content-secondary max-w-xs truncate">
-                          {ship.description || 'No description'}
-                        </td>
-                        <td className="py-2.5 px-3 font-mono font-bold text-content-primary">
+                        </span>
+                        {ship.approvedAt && (
+                          <span className="text-[11px] text-[#71717a] font-mono">
+                            Approved {ship.approvedAt}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="font-mono font-bold text-xs text-amber-400 px-2 py-0.5 rounded bg-[#27272a]">
                           {ship.hours} hrs
-                        </td>
-                        <td className="py-2.5 px-3 text-content-tertiary font-mono">
-                          {ship.approvedAt || '—'}
-                        </td>
-                        <td className="py-2.5 px-3 text-right">
-                          <div className="flex items-center justify-end gap-1.5">
-                            {ship.links.slice(0, 2).map((link, lIdx) => (
-                              <a
-                                key={lIdx}
-                                href={link}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="px-2 py-0.5 rounded text-[10px] font-mono bg-canvas-subtle border border-border-subtle text-content-secondary hover:text-brand-orange transition-colors"
-                              >
-                                {link.includes('github.com') ? 'Repo' : 'Demo'}
-                              </a>
-                            ))}
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                        </span>
+                      </div>
+                    </div>
+
+                    <ExpandableDescription text={ship.description} />
+
+                    {ship.links && ship.links.length > 0 && (
+                      <div className="flex items-center gap-2 pt-1 border-t border-[#27272a]/60">
+                        <span className="text-[10px] uppercase text-[#71717a] font-semibold">Links:</span>
+                        {ship.links.map((link, lIdx) => (
+                          <a
+                            key={lIdx}
+                            href={link}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="px-2 py-0.5 rounded text-[11px] font-mono bg-[#27272a] text-[#d4d4d8] hover:text-brand-orange hover:bg-[#333338] transition-colors inline-flex items-center gap-1"
+                          >
+                            <span>{link.includes('github.com') ? 'Repo' : 'Demo'}</span>
+                            <ExternalLink className="w-2.5 h-2.5" />
+                          </a>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
               </div>
             )}
           </div>
 
           {/* Section 2: Hack Club Live Database Submissions */}
-          <div className="p-5 rounded-xl bg-canvas-card border border-border-subtle space-y-3 shadow-sm">
-            <div className="flex items-center justify-between">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-content-primary flex items-center gap-2">
+          <div className="p-5 rounded-2xl bg-[#121214] border border-[#27272a] text-white space-y-4 shadow-lg">
+            <div className="flex items-center justify-between border-b border-[#27272a] pb-3">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-white flex items-center gap-2">
                 <History className="w-4 h-4 text-brand-orange" />
-                Hack Club Live Submissions History ({userPastLiveSubmissions.length} other in Live)
+                Hack Club Live Submissions ({userPastLiveSubmissions.length} other in Live)
               </h3>
-              <span className="text-xs text-content-tertiary font-mono">
+              <span className="text-xs text-[#a1a1aa] font-mono">
                 @{project.githubUsername}
               </span>
             </div>
 
             {userPastLiveSubmissions.length === 0 ? (
-              <div className="py-4 text-xs text-content-tertiary bg-canvas-subtle p-3 rounded-lg border border-border-subtle">
-                No other submissions in Hack Club Live for this user. This is their only Live submission.
+              <div className="py-4 text-xs text-[#a1a1aa] bg-[#18181b] p-3 rounded-xl border border-[#27272a]">
+                This is submitter&apos;s only Live submission currently in the database.
               </div>
             ) : (
-              <div className="overflow-x-auto border border-border-subtle rounded-lg">
-                <table className="w-full text-left text-xs border-collapse">
-                  <thead>
-                    <tr className="border-b border-border-subtle bg-canvas-subtle text-content-tertiary uppercase font-semibold text-[11px]">
-                      <th className="py-2.5 px-3">Project</th>
-                      <th className="py-2.5 px-3">Track</th>
-                      <th className="py-2.5 px-3">Hours</th>
-                      <th className="py-2.5 px-3">Submitted</th>
-                      <th className="py-2.5 px-3">Status</th>
-                      <th className="py-2.5 px-3 text-right">Repository</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border-subtle">
-                    {userPastLiveSubmissions.map((past) => (
-                      <tr key={past.id} className="hover:bg-canvas-hover transition-colors">
-                        <td className="py-2.5 px-3 font-semibold text-content-primary">
+              <div className="space-y-3">
+                {userPastLiveSubmissions.map((past) => (
+                  <div
+                    key={past.id}
+                    className="p-4 rounded-xl bg-[#18181b] border border-[#27272a] hover:border-[#3f3f46] transition-colors space-y-2.5"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-center gap-2 flex-wrap min-w-0">
+                        <span className="font-bold text-white text-xs">
                           {past.projectName}
-                        </td>
-                        <td className="py-2.5 px-3">
-                          <span className="px-2 py-0.5 rounded text-[10px] font-mono uppercase bg-canvas-subtle border border-border-subtle text-content-secondary">
-                            {past.projectType}
-                          </span>
-                        </td>
-                        <td className="py-2.5 px-3 font-mono font-medium text-content-primary">
-                          {past.submittedHours} hrs
-                        </td>
-                        <td className="py-2.5 px-3 text-content-tertiary">
+                        </span>
+                        <span className="px-2 py-0.2 rounded text-[10px] font-mono uppercase bg-[#27272a] text-[#a1a1aa]">
+                          {past.projectType}
+                        </span>
+                        <span className="text-[11px] text-[#71717a] font-mono">
                           {new Date(past.submittedAt).toLocaleDateString()}
-                        </td>
-                        <td className="py-2.5 px-3">
-                          <span
-                            className={`inline-block px-2 py-0.5 rounded text-[10px] font-semibold uppercase ${
-                              past.cockpitStatus === 'pre_approved'
-                                ? 'bg-semantic-successBg text-semantic-success border border-semantic-successBorder'
-                                : past.cockpitStatus === 'rejected'
-                                ? 'bg-semantic-dangerBg text-semantic-danger border border-semantic-dangerBorder'
-                                : 'bg-canvas-subtle text-content-secondary border border-border-subtle'
-                            }`}
-                          >
-                            {past.cockpitStatus.replace('_', ' ')}
-                          </span>
-                        </td>
-                        <td className="py-2.5 px-3 text-right">
-                          <a
-                            href={past.codeUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-brand-orange hover:underline inline-flex items-center gap-1 font-mono text-[11px]"
-                          >
-                            <span>Repo</span>
-                            <ExternalLink className="w-2.5 h-2.5" />
-                          </a>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="font-mono font-bold text-xs text-white px-2 py-0.5 rounded bg-[#27272a]">
+                          {past.submittedHours} hrs
+                        </span>
+                        <span
+                          className={`px-2 py-0.5 rounded text-[10px] font-semibold uppercase ${
+                            past.cockpitStatus === 'pre_approved'
+                              ? 'bg-emerald-950/60 text-emerald-300 border border-emerald-500/40'
+                              : past.cockpitStatus === 'rejected'
+                              ? 'bg-rose-950/60 text-rose-300 border border-rose-500/40'
+                              : 'bg-[#27272a] text-[#a1a1aa]'
+                          }`}
+                        >
+                          {past.cockpitStatus.replace('_', ' ')}
+                        </span>
+                      </div>
+                    </div>
+
+                    <ExpandableDescription text={past.description} />
+
+                    <div className="flex items-center gap-2 pt-1 border-t border-[#27272a]/60">
+                      <span className="text-[10px] uppercase text-[#71717a] font-semibold">Links:</span>
+                      {past.codeUrl && (
+                        <a
+                          href={past.codeUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="px-2 py-0.5 rounded text-[11px] font-mono bg-[#27272a] text-[#d4d4d8] hover:text-brand-orange transition-colors inline-flex items-center gap-1"
+                        >
+                          <span>Repo</span>
+                          <ExternalLink className="w-2.5 h-2.5" />
+                        </a>
+                      )}
+                      {past.playableUrl && (
+                        <a
+                          href={past.playableUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="px-2 py-0.5 rounded text-[11px] font-mono bg-[#27272a] text-[#d4d4d8] hover:text-brand-orange transition-colors inline-flex items-center gap-1"
+                        >
+                          <span>Demo</span>
+                          <ExternalLink className="w-2.5 h-2.5" />
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </div>
 
-          {/* Reviewer Compliance Checks */}
-          <div className="p-5 rounded-xl bg-canvas-card border border-border-subtle space-y-3 shadow-sm">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-content-primary">
-              Reviewer Compliance Checks
-            </h3>
-            <div className="space-y-2 text-xs">
-              <label className="flex items-center gap-2.5 cursor-pointer select-none p-2 rounded-lg hover:bg-canvas-hover transition-colors">
-                <input
-                  type="checkbox"
-                  checked={Boolean(reviewChecklist['stage1_halceon_reviewed'])}
-                  onChange={() => handleCheckbox('stage1_halceon_reviewed')}
-                  className="rounded border-border text-brand-orange focus:ring-brand-orange w-4 h-4"
-                />
-                <span className="text-content-secondary font-medium">
-                  Submitter&apos;s Halceon Unified past ships have been inspected ({halceonTotalShips} ships found)
-                </span>
-              </label>
+          {/* Interactive Reviewer Pass/Fail Checklist */}
+          <div className="p-5 rounded-2xl bg-[#121214] border border-[#27272a] text-white space-y-3.5 shadow-lg">
+            <div className="flex items-center justify-between border-b border-[#27272a] pb-3">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-white">
+                Stage 1 Verification: Double-Dip & History Checks
+              </h3>
+              <span className="text-xs text-[#a1a1aa]">Select Pass or Fail for each criterion</span>
+            </div>
 
-              <label className="flex items-center gap-2.5 cursor-pointer select-none p-2 rounded-lg hover:bg-canvas-hover transition-colors">
-                <input
-                  type="checkbox"
-                  checked={Boolean(reviewChecklist['stage1_live_reviewed'])}
-                  onChange={() => handleCheckbox('stage1_live_reviewed')}
-                  className="rounded border-border text-brand-orange focus:ring-brand-orange w-4 h-4"
-                />
-                <span className="text-content-secondary font-medium">
-                  Submitter&apos;s prior Live submission records have been verified
-                </span>
-              </label>
+            <div className="space-y-2.5">
+              <PassFailControl
+                label="Halceon Cross-YSWS Ships Inspected"
+                description={`Verified complete track record (${halceonTotalShips} prior ships in Stardance, Arcade, High Seas, Blot).`}
+                status={reviewChecklist['stage1_halceon_reviewed']}
+                onPass={() => handlePass('stage1_halceon_reviewed')}
+                onFail={() => handleFail('stage1_halceon_reviewed')}
+              />
 
-              <label className="flex items-center gap-2.5 cursor-pointer select-none p-2 rounded-lg hover:bg-canvas-hover transition-colors">
-                <input
-                  type="checkbox"
-                  checked={Boolean(reviewChecklist['stage1_double_dip_checked'])}
-                  onChange={() => handleCheckbox('stage1_double_dip_checked')}
-                  className="rounded border-border text-brand-orange focus:ring-brand-orange w-4 h-4"
-                />
-                <span className="text-content-secondary font-medium">
-                  Repository is confirmed original or delta hours applied if previously rewarded
-                </span>
-              </label>
+              <PassFailControl
+                label="Live Submissions History Audited"
+                description="Verified past submissions in Hack Club Live for this user."
+                status={reviewChecklist['stage1_live_reviewed']}
+                onPass={() => handlePass('stage1_live_reviewed')}
+                onFail={() => handleFail('stage1_live_reviewed')}
+              />
+
+              <PassFailControl
+                label="No Uncredited Double-Dipping / Delta Hours Verified"
+                description="Repository is confirmed original or requested hours reflect strictly new, incremental features."
+                status={reviewChecklist['stage1_double_dip_checked']}
+                onPass={() => handlePass('stage1_double_dip_checked')}
+                onFail={() => handleFail('stage1_double_dip_checked')}
+              />
             </div>
           </div>
 
           {/* Reviewer Action Bar */}
-          <div className="pt-4 flex items-center justify-between border-t border-border-subtle">
+          <div className="pt-4 flex items-center justify-between border-t border-border-subtle shrink-0">
             {isFlagging ? (
               <div className="flex items-center gap-2 flex-1 max-w-md mr-4">
                 <input
@@ -387,14 +477,14 @@ export const ManifestDoubleDipStage: React.FC<ManifestDoubleDipStageProps> = ({
                     }
                     setIsFlagging(false);
                   }}
-                  className="px-3 py-1.5 rounded-lg bg-semantic-danger text-white text-xs font-semibold hover:bg-red-700 transition-colors shrink-0"
+                  className="px-3 py-1.5 rounded-lg bg-semantic-danger text-white text-xs font-semibold hover:bg-red-700 transition-colors shrink-0 cursor-pointer"
                 >
                   Confirm Flag
                 </button>
                 <button
                   type="button"
                   onClick={() => setIsFlagging(false)}
-                  className="px-2.5 py-1.5 text-xs text-content-tertiary hover:text-content-primary"
+                  className="px-2.5 py-1.5 text-xs text-content-tertiary hover:text-content-primary cursor-pointer"
                 >
                   Cancel
                 </button>
@@ -403,7 +493,7 @@ export const ManifestDoubleDipStage: React.FC<ManifestDoubleDipStageProps> = ({
               <button
                 type="button"
                 onClick={() => setIsFlagging(true)}
-                className="px-3.5 py-2 rounded-lg bg-canvas-card border border-border-subtle text-xs font-semibold text-content-secondary hover:text-semantic-danger hover:border-semantic-dangerBorder transition-colors flex items-center gap-1.5 shadow-sm"
+                className="px-3.5 py-2 rounded-lg bg-canvas-card border border-border-subtle text-xs font-semibold text-content-secondary hover:text-semantic-danger hover:border-semantic-dangerBorder transition-colors flex items-center gap-1.5 shadow-sm cursor-pointer"
               >
                 <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
                 <span>Flag Potential Double-Dip</span>
@@ -413,9 +503,9 @@ export const ManifestDoubleDipStage: React.FC<ManifestDoubleDipStageProps> = ({
             <button
               type="button"
               onClick={onAdvance}
-              className="px-5 py-2 rounded-lg bg-brand-orange text-white hover:bg-orange-600 text-xs font-semibold transition-colors shadow-sm flex items-center gap-1.5"
+              className="px-5 py-2 rounded-lg bg-brand-orange text-white hover:bg-orange-600 text-xs font-semibold transition-colors shadow-sm flex items-center gap-1.5 cursor-pointer"
             >
-              <span>Continue to Deliverable & README →</span>
+              <span>Continue to Sahil&apos;s Introspect →</span>
             </button>
           </div>
         </>

@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { CockpitProject, GitHubRepoData } from '../../lib/types';
+import { PassFailControl } from '../common/PassFailControl';
 
 interface ProjectReadmeStageProps {
   project: CockpitProject;
@@ -19,7 +20,7 @@ interface ProjectReadmeStageProps {
   onAdvance: () => void;
   onEarlyExit?: (reason: string) => void;
   reviewChecklist?: Record<string, boolean>;
-  onToggleChecklist?: (key: string) => void;
+  onToggleChecklist?: (key: string, status?: boolean) => void;
 }
 
 export const ProjectReadmeStage: React.FC<ProjectReadmeStageProps> = ({
@@ -41,7 +42,7 @@ export const ProjectReadmeStage: React.FC<ProjectReadmeStageProps> = ({
     try {
       return marked.parse(readmeContent) as string;
     } catch {
-      return '<p class="text-content-tertiary">Unable to render README markdown.</p>';
+      return '<p class="text-[#71717a]">Unable to render README markdown.</p>';
     }
   }, [readmeContent]);
 
@@ -52,9 +53,15 @@ export const ProjectReadmeStage: React.FC<ProjectReadmeStageProps> = ({
     setTimeout(() => setCopiedField(null), 2000);
   };
 
-  const handleCheckbox = (key: string) => {
+  const handlePass = (key: string) => {
     if (onToggleChecklist) {
-      onToggleChecklist(key);
+      onToggleChecklist(key, true);
+    }
+  };
+
+  const handleFail = (key: string) => {
+    if (onToggleChecklist) {
+      onToggleChecklist(key, false);
     }
   };
 
@@ -68,7 +75,7 @@ export const ProjectReadmeStage: React.FC<ProjectReadmeStageProps> = ({
         <div>
           <div className="flex items-center gap-2">
             <span className="text-xs font-mono font-bold uppercase tracking-wider text-brand-orange bg-brand-orange/10 px-2 py-0.5 rounded border border-brand-orange/20">
-              Stage 2 of 5
+              Stage 3 of 6
             </span>
             <span className="text-xs text-content-tertiary">Deliverable Overview & README</span>
           </div>
@@ -93,34 +100,34 @@ export const ProjectReadmeStage: React.FC<ProjectReadmeStageProps> = ({
         </div>
       </div>
 
-      {/* Metadata & URLs Inspection Cards */}
+      {/* Metadata & URLs Inspection Cards (Dark Console Style) */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 shrink-0">
         {/* Code URL Card */}
-        <div className="p-4 rounded-xl bg-canvas-card border border-border-subtle space-y-2 shadow-sm">
+        <div className="p-4 rounded-xl bg-[#121214] border border-[#27272a] text-white space-y-2 shadow-lg">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-semibold text-content-tertiary uppercase tracking-wider flex items-center gap-1.5">
+            <span className="text-[11px] font-semibold text-[#a1a1aa] uppercase tracking-wider flex items-center gap-1.5">
               <FileCode className="w-3.5 h-3.5 text-brand-orange" />
-              Source Code URL
+              Source Code Repository
             </span>
             {isCodeUrlGitHub && (
-              <span className="text-[10px] font-mono text-semantic-success bg-semantic-successBg px-2 py-0.2 rounded border border-semantic-successBorder">
+              <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.2 rounded border border-emerald-500/20">
                 Verified GitHub
               </span>
             )}
           </div>
-          <div className="flex items-center justify-between p-2.5 rounded-lg bg-canvas-subtle border border-border-subtle">
-            <span className="text-xs font-mono text-content-primary truncate select-all">
+          <div className="flex items-center justify-between p-2.5 rounded-lg bg-[#18181b] border border-[#27272a]">
+            <span className="text-xs font-mono text-white truncate select-all">
               {project.codeUrl || 'No code URL provided'}
             </span>
             <div className="flex items-center gap-1 shrink-0 ml-2">
               <button
                 type="button"
                 onClick={() => copyToClipboard(project.codeUrl, 'Code URL')}
-                className="p-1 text-content-tertiary hover:text-content-primary rounded hover:bg-canvas-card"
+                className="p-1 text-[#a1a1aa] hover:text-white rounded hover:bg-[#27272a] cursor-pointer"
                 title="Copy Code URL"
               >
                 {copiedField === 'Code URL' ? (
-                  <Check className="w-3.5 h-3.5 text-semantic-success" />
+                  <Check className="w-3.5 h-3.5 text-emerald-400" />
                 ) : (
                   <Copy className="w-3.5 h-3.5" />
                 )}
@@ -129,7 +136,7 @@ export const ProjectReadmeStage: React.FC<ProjectReadmeStageProps> = ({
                 href={project.codeUrl}
                 target="_blank"
                 rel="noreferrer"
-                className="p-1 text-content-tertiary hover:text-brand-orange rounded hover:bg-canvas-card"
+                className="p-1 text-[#a1a1aa] hover:text-brand-orange rounded hover:bg-[#27272a]"
                 title="Open Code URL"
               >
                 <ExternalLink className="w-3.5 h-3.5" />
@@ -139,26 +146,26 @@ export const ProjectReadmeStage: React.FC<ProjectReadmeStageProps> = ({
         </div>
 
         {/* Playable Demo URL Card */}
-        <div className="p-4 rounded-xl bg-canvas-card border border-border-subtle space-y-2 shadow-sm">
+        <div className="p-4 rounded-xl bg-[#121214] border border-[#27272a] text-white space-y-2 shadow-lg">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-semibold text-content-tertiary uppercase tracking-wider flex items-center gap-1.5">
-              <Globe className="w-3.5 h-3.5 text-blue-600" />
+            <span className="text-[11px] font-semibold text-[#a1a1aa] uppercase tracking-wider flex items-center gap-1.5">
+              <Globe className="w-3.5 h-3.5 text-blue-400" />
               Playable / Demo URL
             </span>
           </div>
-          <div className="flex items-center justify-between p-2.5 rounded-lg bg-canvas-subtle border border-border-subtle">
-            <span className="text-xs font-mono text-content-primary truncate select-all">
+          <div className="flex items-center justify-between p-2.5 rounded-lg bg-[#18181b] border border-[#27272a]">
+            <span className="text-xs font-mono text-white truncate select-all">
               {project.playableUrl || 'No playable URL provided'}
             </span>
             <div className="flex items-center gap-1 shrink-0 ml-2">
               <button
                 type="button"
                 onClick={() => copyToClipboard(project.playableUrl, 'Playable URL')}
-                className="p-1 text-content-tertiary hover:text-content-primary rounded hover:bg-canvas-card"
+                className="p-1 text-[#a1a1aa] hover:text-white rounded hover:bg-[#27272a] cursor-pointer"
                 title="Copy Demo URL"
               >
                 {copiedField === 'Playable URL' ? (
-                  <Check className="w-3.5 h-3.5 text-semantic-success" />
+                  <Check className="w-3.5 h-3.5 text-emerald-400" />
                 ) : (
                   <Copy className="w-3.5 h-3.5" />
                 )}
@@ -167,7 +174,7 @@ export const ProjectReadmeStage: React.FC<ProjectReadmeStageProps> = ({
                 href={project.playableUrl}
                 target="_blank"
                 rel="noreferrer"
-                className="p-1 text-content-tertiary hover:text-brand-orange rounded hover:bg-canvas-card"
+                className="p-1 text-[#a1a1aa] hover:text-brand-orange rounded hover:bg-[#27272a]"
                 title="Open Demo URL"
               >
                 <ExternalLink className="w-3.5 h-3.5" />
@@ -178,41 +185,41 @@ export const ProjectReadmeStage: React.FC<ProjectReadmeStageProps> = ({
       </div>
 
       {/* Submitter Description Card */}
-      <div className="p-5 rounded-xl bg-canvas-card border border-border-subtle space-y-2 shadow-sm shrink-0">
-        <div className="flex items-center justify-between">
+      <div className="p-5 rounded-2xl bg-[#121214] border border-[#27272a] text-white space-y-3 shadow-lg shrink-0">
+        <div className="flex items-center justify-between border-b border-[#27272a] pb-2.5">
           <div className="flex items-center gap-2">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-content-primary">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-white">
               Submitter Project Description
             </h3>
             {hasDescription ? (
-              <span className="text-[10px] font-mono text-semantic-success bg-semantic-successBg px-1.5 py-0.2 rounded border border-semantic-successBorder">
+              <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-1.5 py-0.2 rounded border border-emerald-500/20">
                 Detailed
               </span>
             ) : (
-              <span className="text-[10px] font-mono text-amber-700 bg-amber-50 px-1.5 py-0.2 rounded border border-amber-200">
+              <span className="text-[10px] font-mono text-amber-400 bg-amber-500/10 px-1.5 py-0.2 rounded border border-amber-500/20">
                 Brief
               </span>
             )}
           </div>
-          <span className="text-xs text-content-tertiary font-mono">
+          <span className="text-xs text-[#a1a1aa] font-mono">
             {project.submittedHours} hrs requested
           </span>
         </div>
-        <p className="text-xs text-content-secondary leading-relaxed bg-canvas-subtle p-3 rounded-lg border border-border-subtle">
+        <p className="text-xs text-[#d4d4d8] leading-relaxed bg-[#18181b] p-3.5 rounded-xl border border-[#27272a] whitespace-pre-wrap">
           {project.description || 'No description provided by submitter.'}
         </p>
       </div>
 
       {/* Full README Render Card */}
-      <div className="flex-1 min-h-[360px] bg-canvas-card border border-border-subtle rounded-xl flex flex-col overflow-hidden shadow-sm">
-        <div className="p-3.5 bg-canvas-subtle border-b border-border-subtle flex items-center justify-between shrink-0">
+      <div className="flex-1 min-h-[360px] bg-[#121214] border border-[#27272a] rounded-2xl flex flex-col overflow-hidden shadow-lg">
+        <div className="p-4 bg-[#18181b] border-b border-[#27272a] flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2">
             <FileText className="w-4 h-4 text-brand-orange" />
-            <span className="text-xs font-bold uppercase tracking-wider text-content-primary">
+            <span className="text-xs font-bold uppercase tracking-wider text-white">
               Repository README.md
             </span>
           </div>
-          <span className="text-[11px] font-mono text-content-tertiary">
+          <span className="text-[11px] font-mono text-[#a1a1aa]">
             {readmeContent ? `${readmeContent.length} characters` : 'No README found'}
           </span>
         </div>
@@ -220,59 +227,51 @@ export const ProjectReadmeStage: React.FC<ProjectReadmeStageProps> = ({
         <div className="flex-1 overflow-y-auto p-6 select-text">
           {renderedReadme ? (
             <div
-              className="prose prose-sm max-w-none text-content-secondary leading-relaxed"
+              className="prose prose-invert prose-sm max-w-none text-[#d4d4d8] leading-relaxed space-y-3"
               dangerouslySetInnerHTML={{ __html: renderedReadme }}
             />
           ) : (
-            <div className="py-16 text-center text-xs text-content-tertiary space-y-2">
-              <HelpCircle className="w-6 h-6 text-content-muted mx-auto" />
+            <div className="py-16 text-center text-xs text-[#71717a] space-y-2">
+              <HelpCircle className="w-6 h-6 text-[#52525b] mx-auto" />
               <p>No README.md found in the root of repository {project.codeUrl}.</p>
             </div>
           )}
         </div>
       </div>
 
-      {/* Reviewer Compliance Checks */}
-      <div className="p-5 rounded-xl bg-canvas-card border border-border-subtle space-y-3 shadow-sm shrink-0">
-        <h3 className="text-xs font-bold uppercase tracking-wider text-content-primary">
-          Reviewer Compliance Checks
-        </h3>
-        <div className="space-y-2 text-xs">
-          <label className="flex items-center gap-2.5 cursor-pointer select-none p-2 rounded-lg hover:bg-canvas-hover transition-colors">
-            <input
-              type="checkbox"
-              checked={Boolean(reviewChecklist['stage2_urls_valid'])}
-              onChange={() => handleCheckbox('stage2_urls_valid')}
-              className="rounded border-border text-brand-orange focus:ring-brand-orange w-4 h-4"
-            />
-            <span className="text-content-secondary font-medium">
-              Source code repository URL and demo links are valid, public, and accessible
-            </span>
-          </label>
+      {/* Interactive Reviewer Pass/Fail Checklist */}
+      <div className="p-5 rounded-2xl bg-[#121214] border border-[#27272a] text-white space-y-3.5 shadow-lg shrink-0">
+        <div className="flex items-center justify-between border-b border-[#27272a] pb-3">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-white">
+            Stage 3 Verification: Deliverable & Documentation Checks
+          </h3>
+          <span className="text-xs text-[#a1a1aa]">Select Pass or Fail for each criterion</span>
+        </div>
 
-          <label className="flex items-center gap-2.5 cursor-pointer select-none p-2 rounded-lg hover:bg-canvas-hover transition-colors">
-            <input
-              type="checkbox"
-              checked={Boolean(reviewChecklist['stage2_desc_complete'])}
-              onChange={() => handleCheckbox('stage2_desc_complete')}
-              className="rounded border-border text-brand-orange focus:ring-brand-orange w-4 h-4"
-            />
-            <span className="text-content-secondary font-medium">
-              Project name and description accurately explain the purpose and functionality
-            </span>
-          </label>
+        <div className="space-y-2.5">
+          <PassFailControl
+            label="Source Code & Demo URLs Valid & Accessible"
+            description="Repository is public on GitHub and playable demo URL resolves without connection errors."
+            status={reviewChecklist['stage3_urls_valid']}
+            onPass={() => handlePass('stage3_urls_valid')}
+            onFail={() => handleFail('stage3_urls_valid')}
+          />
 
-          <label className="flex items-center gap-2.5 cursor-pointer select-none p-2 rounded-lg hover:bg-canvas-hover transition-colors">
-            <input
-              type="checkbox"
-              checked={Boolean(reviewChecklist['stage2_readme_clear'])}
-              onChange={() => handleCheckbox('stage2_readme_clear')}
-              className="rounded border-border text-brand-orange focus:ring-brand-orange w-4 h-4"
-            />
-            <span className="text-content-secondary font-medium">
-              README provides clear instructions on what the project is and how to use or run it
-            </span>
-          </label>
+          <PassFailControl
+            label="Project Description & Name Coherent"
+            description="Submitted title and summary accurately describe what was built and matches the repo code."
+            status={reviewChecklist['stage3_description_coherent']}
+            onPass={() => handlePass('stage3_description_coherent')}
+            onFail={() => handleFail('stage3_description_coherent')}
+          />
+
+          <PassFailControl
+            label="README Exists with Usage / Setup Instructions"
+            description="Repository contains clear setup, build, or operating steps for the reviewer."
+            status={reviewChecklist['stage3_readme_present']}
+            onPass={() => handlePass('stage3_readme_present')}
+            onFail={() => handleFail('stage3_readme_present')}
+          />
         </div>
       </div>
 
@@ -284,25 +283,25 @@ export const ProjectReadmeStage: React.FC<ProjectReadmeStageProps> = ({
               type="text"
               value={flagNote}
               onChange={(e) => setFlagNote(e.target.value)}
-              placeholder="Reason for URL or README concern..."
+              placeholder="Reason for deliverable or documentation concern..."
               className="text-xs px-3 py-1.5 rounded-lg border border-border bg-canvas-card text-content-primary flex-1 focus:outline-none focus:border-brand-orange"
             />
             <button
               type="button"
               onClick={() => {
                 if (onEarlyExit && flagNote.trim()) {
-                  onEarlyExit(`Metadata Concern: ${flagNote.trim()}`);
+                  onEarlyExit(`README Concern: ${flagNote.trim()}`);
                 }
                 setIsFlagging(false);
               }}
-              className="px-3 py-1.5 rounded-lg bg-semantic-danger text-white text-xs font-semibold hover:bg-red-700 transition-colors shrink-0"
+              className="px-3 py-1.5 rounded-lg bg-semantic-danger text-white text-xs font-semibold hover:bg-red-700 transition-colors shrink-0 cursor-pointer"
             >
               Confirm Flag
             </button>
             <button
               type="button"
               onClick={() => setIsFlagging(false)}
-              className="px-2.5 py-1.5 text-xs text-content-tertiary hover:text-content-primary"
+              className="px-2.5 py-1.5 text-xs text-content-tertiary hover:text-content-primary cursor-pointer"
             >
               Cancel
             </button>
@@ -311,19 +310,19 @@ export const ProjectReadmeStage: React.FC<ProjectReadmeStageProps> = ({
           <button
             type="button"
             onClick={() => setIsFlagging(true)}
-            className="px-3.5 py-2 rounded-lg bg-canvas-card border border-border-subtle text-xs font-semibold text-content-secondary hover:text-semantic-danger hover:border-semantic-dangerBorder transition-colors flex items-center gap-1.5 shadow-sm"
+            className="px-3.5 py-2 rounded-lg bg-canvas-card border border-border-subtle text-xs font-semibold text-content-secondary hover:text-semantic-danger hover:border-semantic-dangerBorder transition-colors flex items-center gap-1.5 shadow-sm cursor-pointer"
           >
             <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
-            <span>Flag Metadata Issue</span>
+            <span>Flag Documentation Concern</span>
           </button>
         )}
 
         <button
           type="button"
           onClick={onAdvance}
-          className="px-5 py-2 rounded-lg bg-brand-orange text-white hover:bg-orange-600 text-xs font-semibold transition-colors shadow-sm flex items-center gap-1.5"
+          className="px-5 py-2 rounded-lg bg-brand-orange text-white hover:bg-orange-600 text-xs font-semibold transition-colors shadow-sm flex items-center gap-1.5 cursor-pointer"
         >
-          <span>Continue to Live Demo →</span>
+          <span>Continue to Playable Demo Testing →</span>
         </button>
       </div>
     </div>
