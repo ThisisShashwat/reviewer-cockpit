@@ -1,6 +1,6 @@
 /**
  * Core type definitions for Reviewer Cockpit
- * 100% Real-data driven, zero-simulation client-side operations.
+ * 100% Real-data driven, zero-simulation operations.
  */
 
 export type ProjectTrack = 'software' | 'hardware' | 'auto';
@@ -15,6 +15,135 @@ export interface SubmissionParams {
   lapseLinks: string;
   recordId: string;
   description: string;
+}
+
+export type CockpitStatus =
+  | 'pending'
+  | 'in_review'
+  | 'pre_approved'
+  | 'rejected'
+  | 'flagged_fraud';
+
+export interface FieldDiff {
+  field: string;
+  oldValue: any;
+  newValue: any;
+}
+
+export interface AuditLogEntry {
+  id: string;
+  projectId: string;
+  liveRecordId: string;
+  timestamp: string;
+  source: 'live_sync' | 'cockpit_reviewer' | 'cockpit_admin';
+  actor: string;
+  action:
+    | 'project_created'
+    | 'project_updated'
+    | 'verdict_recorded'
+    | 'verdict_updated'
+    | 'status_changed'
+    | 'note_added';
+  diffs: FieldDiff[];
+  summary: string;
+  metadata?: Record<string, any>;
+}
+
+export interface VerdictDetails {
+  action: 'pre_approve' | 'reject' | 'flag_fraud';
+  approvedHours: number;
+  deflatedHours: number;
+  hoursJustification: string;
+  publicFeedback: string;
+  internalNotes: string;
+  appliedChecklist: Record<string, boolean>;
+  reviewerName: string;
+  decidedAt: string;
+}
+
+export interface CockpitProject {
+  id: string;
+  liveRecordId: string;
+  projectName: string;
+  projectType: 'software' | 'hardware';
+  codeUrl: string;
+  playableUrl: string;
+  description: string;
+  githubUsername: string;
+  screenshotUrl?: string;
+
+  submittedHours: number;
+  overrideHoursJustification?: string;
+  hackatimeId?: string;
+  hackatimeProjects?: string;
+  lapseLinks: string[];
+
+  liveApproved: boolean;
+  liveReviewStatus: string;
+  liveReviewedAt?: string;
+  liveReviewedBy?: string;
+
+  liveReviewerVerdict?: string;
+  liveReviewerJustification?: string;
+  liveReviewerHours?: number;
+  liveReviewerReviewedBy?: string;
+  liveReviewerReviewedAt?: string;
+
+  cockpitStatus: CockpitStatus;
+  cockpitVerdict?: VerdictDetails;
+
+  submittedAt: string;
+  firstSyncedAt: string;
+  lastSyncedAt: string;
+  updatedAt: string;
+  version: number;
+  changeCount: number;
+
+  telemetryCache?: {
+    totalSeconds?: number;
+    aiSeconds?: number;
+    editorDistribution?: Record<string, number>;
+    languages?: Record<string, number>;
+    fetchedAt?: string;
+  };
+}
+
+export interface SubmitVerdictRequest {
+  projectId: string;
+  action: 'pre_approve' | 'reject' | 'flag_fraud';
+  approvedHours: number;
+  deflatedHours?: number;
+  hoursJustification: string;
+  publicFeedback?: string;
+  internalNotes?: string;
+  appliedChecklist?: Record<string, boolean>;
+  reviewerName?: string;
+}
+
+export interface PreapprovedExportItem {
+  projectId: string;
+  liveRecordId: string;
+  projectName: string;
+  githubUsername: string;
+  codeUrl: string;
+  playableUrl: string;
+  approvedHours: number;
+  recommendedVerdict: 'approve' | 'reject';
+  justification: string;
+  decidedAt: string;
+  reviewerName: string;
+  clipboardText: string;
+}
+
+export interface QueueStats {
+  total: number;
+  pending: number;
+  inReview: number;
+  preApproved: number;
+  rejected: number;
+  flaggedFraud: number;
+  totalApprovedHours: number;
+  averageApprovedHours: number;
 }
 
 export type LinkCategory = 'lapse' | 'video' | 'journal' | 'code' | 'other';
@@ -43,7 +172,7 @@ export interface CommitFileChange {
   filename: string;
   additions: number;
   deletions: number;
-  status: string; // added, modified, removed
+  status: string;
 }
 
 export interface GitHubCommit {

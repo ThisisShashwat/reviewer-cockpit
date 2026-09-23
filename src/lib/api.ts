@@ -7,7 +7,17 @@
  * 3. Hack Club Manifest API (Cross-YSWS Double-Dipping Lookup)
  */
 
-import { GitHubRepoData, HackatimeProjectStats, ManifestLookupData } from './types';
+import {
+  AuditLogEntry,
+  CockpitProject,
+  GitHubRepoData,
+  HackatimeProjectStats,
+  ManifestLookupData,
+  PreapprovedExportItem,
+  QueueStats,
+  SubmitVerdictRequest,
+  VerdictDetails,
+} from './types';
 
 /**
  * Extracts owner and repo name from any GitHub URL
@@ -321,4 +331,105 @@ export async function fetchManifestLookup(codeUrl: string, username: string): Pr
       error: 'Manifest lookup unreachable'
     };
   }
+}
+
+// =============================================================
+// Cockpit Server API Client (/api)
+// =============================================================
+
+export async function checkServerHealth(): Promise<boolean> {
+  try {
+    const res = await fetch('/api/health');
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+export async function fetchCockpitProjects(filters?: {
+  status?: string;
+  type?: string;
+  search?: string;
+}): Promise<{ projects: CockpitProject[]; stats: QueueStats }> {
+  const params = new URLSearchParams();
+  if (filters?.status && filters.status !== 'all') params.set('status', filters.status);
+  if (filters?.type && filters.type !== 'all') params.set('type', filters.type);
+  if (filters?.search) params.set('search', filters.search);
+
+  const res = await fetch(`/api/projects?${params.toString()}`);
+  if (!res.ok) throw new Error(`Failed to fetch projects: ${res.statusText}`);
+  return res.json();
+}
+
+export async function fetchCockpitProject(id: string): Promise<{
+  project: CockpitProject;
+  auditHistory: AuditLogEntry[];
+  verdict?: VerdictDetails;
+}> {
+  const res = await fetch(`/api/projects/${encodeURIComponent(id)}`);
+  if (!res.ok) throw new Error(`Failed to fetch project ${id}: ${res.statusText}`);
+  return res.json();
+}
+
+export async function submitCockpitVerdict(
+  payload: SubmitVerdictRequest
+): Promise<{ ok: boolean; verdict: VerdictDetails; project: CockpitProject; stats: QueueStats }> {
+  const res = await fetch('/api/verdicts', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(err.error || 'Failed to submit verdict');
+  }
+  return res.json();
+}
+
+export async function fetchPreapprovedQueue(): Promise<{
+  items: PreapprovedExportItem[];
+  count: number;
+}> {
+  const res = await fetch('/api/preapproved');
+  if (!res.ok) throw new Error(`Failed to fetch pre-approved queue: ${res.statusText}`);
+  return res.json();
+}
+
+export async function syncProjectsFromLive(dump: any): Promise<{
+  ok: boolean;
+  processed: number;
+  created: number;
+  updated: number;
+  unchanged: number;
+}> {
+  const res = await fetch('/api/sync/projects', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(dump),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(err.error || 'Failed to sync projects');
+  }
+  return res.json();
+}
+
+export async function saveProjectNote(
+  id: string,
+  note: string,
+  actor = 'reviewer'
+): Promise<{ ok: boolean; entry: AuditLogEntry }> {
+  const res = await fetch(`/api/projects/${encodeURIComponent(id)}/notes`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ note, actor }),
+  });
+  if (!res.ok) throw new Error(`Failed to save note: ${res.statusText}`);
+  return res.json();
+}
+
+export async function fetchCockpitStats(): Promise<QueueStats> {
+  const res = await fetch('/api/stats');
+  if (!res.ok) throw new Error(`Failed to fetch stats: ${res.statusText}`);
+  return res.json();
 }
