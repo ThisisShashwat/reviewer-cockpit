@@ -15,12 +15,13 @@ import {
   Image as ImageIcon,
   GitCommit,
 } from 'lucide-react';
-import { fetchHalceonProfile, fetchManifestLookup } from '../../lib/api';
+import { fetchHalceonProfile, fetchManifestLookup, fetchArchiveCommit } from '../../lib/api';
 import {
   CockpitProject,
   HalceonProfileData,
   HalceonShipLink,
   ManifestLookupData,
+  ArchiveCommitInfo,
 } from '../../lib/types';
 import { PassFailControl } from '../common/PassFailControl';
 
@@ -32,6 +33,12 @@ interface ManifestDoubleDipStageProps {
   onApplyDeltaHours?: (hours: number, justification: string) => void;
   reviewChecklist?: Record<string, boolean>;
   onToggleChecklist?: (key: string, status?: boolean) => void;
+  onBaselineCommitDiscovered?: (info: {
+    commitHash: string;
+    shortHash: string;
+    shipName: string;
+    archiveUrl: string;
+  }) => void;
 }
 
 function decodeHtmlEntities(str: string): string {
@@ -92,9 +99,12 @@ export const ManifestDoubleDipStage: React.FC<ManifestDoubleDipStageProps> = ({
   onApplyDeltaHours: _onApplyDeltaHours,
   reviewChecklist = {},
   onToggleChecklist,
+  onBaselineCommitDiscovered,
 }) => {
   const [_manifestData, setManifestData] = useState<ManifestLookupData | null>(null);
   const [halceonData, setHalceonData] = useState<HalceonProfileData | null>(null);
+  const [archiveCommitData, setArchiveCommitData] = useState<ArchiveCommitInfo | null>(null);
+  const [archiveCommitLoading, setArchiveCommitLoading] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [flagNote, setFlagNote] = useState('');
   const [isFlagging, setIsFlagging] = useState(false);
@@ -159,6 +169,42 @@ export const ManifestDoubleDipStage: React.FC<ManifestDoubleDipStageProps> = ({
   // Find archive link for matching ship if any
   const priorArchiveLink = matchingHalceonShip?.parsedLinks?.find((l) => l.isArchive) ||
     (matchingHalceonShip?.links || []).find((l) => l.includes('archive.hackclub.com') || l.includes('archive.org'));
+
+  // Programmatically fetch archive commit hash
+  useEffect(() => {
+    if (!priorArchiveLink) {
+      setArchiveCommitData(null);
+      return;
+    }
+    const archiveUrl = typeof priorArchiveLink === 'string' ? priorArchiveLink : priorArchiveLink.url;
+    if (!archiveUrl || !archiveUrl.includes('archive.hackclub.com')) {
+      return;
+    }
+    let mounted = true;
+    setArchiveCommitLoading(true);
+    fetchArchiveCommit(archiveUrl)
+      .then((data) => {
+        if (mounted) {
+          setArchiveCommitData(data);
+          if (data.success && data.commitHash && onBaselineCommitDiscovered && matchingHalceonShip) {
+            onBaselineCommitDiscovered({
+              commitHash: data.commitHash,
+              shortHash: data.shortHash || data.commitHash.slice(0, 7),
+              shipName: matchingHalceonShip.repo,
+              archiveUrl,
+            });
+          }
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (mounted) setArchiveCommitLoading(false);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [priorArchiveLink, matchingHalceonShip?.repo, onBaselineCommitDiscovered]);
 
   // Check if similar project name exists in past ships
   const currentProjNameClean = project.projectName.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -291,6 +337,51 @@ export const ManifestDoubleDipStage: React.FC<ManifestDoubleDipStageProps> = ({
                     </span>
                   )}
                 </div>
+
+                {/* Programmatically Discovered Baseline Commit */}
+                {archiveCommitLoading ? (
+                  <div className="p-3 rounded-xl bg-[#18181b] border border-[#27272a] text-zinc-400 flex items-center gap-2">
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin text-purple-400" />
+                    <span>Querying archive remote git refs (git ls-remote)...</span>
+                  </div>
+                ) : archiveCommitData?.success && archiveCommitData.commitHash ? (
+                  <div className="p-3.5 rounded-xl bg-[#18181b] border border-purple-500/40 text-white space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-purple-300 font-bold flex items-center gap-1.5 text-xs">
+                        <GitCommit className="w-4 h-4 text-purple-400" />
+                        Baseline Approved Commit: <code className="text-emerald-400 bg-black/60 px-2 py-0.5 rounded font-mono font-bold text-xs">{archiveCommitData.shortHash}</code>
+                      </span>
+                      <span className="text-[10px] text-zinc-400 font-mono bg-black/40 px-2 py-0.5 rounded border border-[#27272a]">
+                        Archive ID: {archiveCommitData.archiveId}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-0.5 flex-wrap">
+                      <a
+                        href={`${project.codeUrl}/commit/${archiveCommitData.commitHash}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="px-2.5 py-1.5 rounded-lg bg-purple-950/60 text-purple-200 border border-purple-500/40 hover:bg-purple-900/60 transition-colors inline-flex items-center gap-1.5 font-mono text-[11px] font-semibold"
+                      >
+                        <span>View Commit {archiveCommitData.shortHash} on GitHub</span>
+                        <ExternalLink className="w-3 h-3" />
+                      </a>
+                      <a
+                        href={`${project.codeUrl}/compare/${archiveCommitData.commitHash}...HEAD`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="px-2.5 py-1.5 rounded-lg bg-brand-orange/20 text-orange-200 border border-brand-orange/40 hover:bg-brand-orange/30 transition-colors inline-flex items-center gap-1.5 font-mono text-[11px] font-bold"
+                      >
+                        <span>Compare New Work ({archiveCommitData.shortHash}...HEAD)</span>
+                        <ExternalLink className="w-3 h-3" />
+                      </a>
+                    </div>
+
+                    <div className="p-2 rounded bg-purple-950/30 border border-purple-500/20 text-[11px] text-purple-200/90 leading-relaxed">
+                      💡 <strong>Audit Baseline Established:</strong> Commits up to <code className="text-white font-mono">{archiveCommitData.shortHash}</code> were approved in prior ship &ldquo;{matchingHalceonShip.repo}&rdquo; ({matchingHalceonShip.hours}h). In Stage 6 (Commits & AI), any commits up to this hash will be tagged as historical, and only subsequent commits will count as eligible new engineering progress.
+                    </div>
+                  </div>
+                ) : null}
 
                 <div className="flex items-center justify-between font-mono pt-2 border-t border-[#27272a]">
                   <span className="text-[#a1a1aa] flex items-center gap-2">
