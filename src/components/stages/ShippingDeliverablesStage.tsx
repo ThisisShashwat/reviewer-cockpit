@@ -8,6 +8,7 @@ import {
   RefreshCw,
   Smartphone,
   Code,
+  Image,
 } from 'lucide-react';
 import { CockpitProject, GitHubRepoData } from '../../lib/types';
 import { PassFailControl } from '../common/PassFailControl';
@@ -226,6 +227,44 @@ export const ShippingDeliverablesStage: React.FC<ShippingDeliverablesStageProps>
         </div>
       )}
 
+      {/* Uploaded Deliverable Screenshot Verification Card */}
+      <div className="p-5 rounded-2xl bg-[#121214] border border-[#27272a] text-white space-y-3 shadow-lg shrink-0">
+        <div className="flex items-center justify-between border-b border-[#27272a] pb-2.5">
+          <div className="flex items-center gap-2">
+            <Image className="w-4 h-4 text-brand-orange" />
+            <h3 className="text-xs font-bold uppercase tracking-wider text-white">
+              Submitted Deliverable Screenshot
+            </h3>
+          </div>
+          {project.screenshotUrl && (
+            <a
+              href={project.screenshotUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="text-[11px] font-mono text-brand-orange hover:underline flex items-center gap-1 font-semibold"
+            >
+              <span>Open Original Image</span>
+              <ExternalLink className="w-3 h-3" />
+            </a>
+          )}
+        </div>
+
+        {project.screenshotUrl ? (
+          <div className="relative rounded-xl overflow-hidden border border-[#27272a] bg-[#09090b] flex items-center justify-center max-h-[380px] p-2">
+            <img
+              src={project.screenshotUrl}
+              alt={`Submitted screenshot for ${project.projectName}`}
+              className="max-h-[360px] w-auto object-contain rounded-lg shadow-md"
+              loading="lazy"
+            />
+          </div>
+        ) : (
+          <div className="p-6 text-center text-xs text-[#71717a] bg-[#18181b] rounded-xl border border-[#27272a]">
+            No screenshot image uploaded for this submission.
+          </div>
+        )}
+      </div>
+
       {/* Interactive Deliverable Preview Container (Dark Console Frame) */}
       <div className="flex-1 min-h-[460px] bg-[#121214] border border-[#27272a] rounded-2xl flex flex-col overflow-hidden shadow-lg">
         {/* Frame Topbar */}
@@ -313,38 +352,62 @@ export const ShippingDeliverablesStage: React.FC<ShippingDeliverablesStageProps>
         </div>
       </div>
 
-      {/* Interactive Reviewer Pass/Fail Checklist */}
+      {/* Interactive Reviewer Pass/Fail Checklist: 6 Shipped Project Core Checks */}
       <div className="p-5 rounded-2xl bg-[#121214] border border-[#27272a] text-white space-y-3.5 shadow-lg shrink-0">
         <div className="flex items-center justify-between border-b border-[#27272a] pb-3">
           <h3 className="text-xs font-bold uppercase tracking-wider text-white">
-            Stage 4 Verification: Shipping & Host Checks
+            Stage 4 Verification: Shipped Project 6-Point Criteria
           </h3>
           <span className="text-xs text-[#a1a1aa]">Select Pass or Fail for each criterion</span>
         </div>
 
         <div className="space-y-2.5">
           <PassFailControl
-            label="Deliverable Executable & Interactive"
-            description="Playable web application, binary release, or high-fidelity video demonstration runs as intended."
-            status={reviewChecklist['stage4_playable_running']}
-            onPass={() => handlePass('stage4_playable_running')}
-            onFail={() => handleFail('stage4_playable_running')}
+            label="1. Repository URL Valid & Accessible"
+            description="GitHub repository is public, valid, and matches the submitted code."
+            status={reviewChecklist['stage4_repo_correct']}
+            onPass={() => handlePass('stage4_repo_correct')}
+            onFail={() => handleFail('stage4_repo_correct')}
           />
 
           <PassFailControl
-            label="Hosting Complies with Stability Guidelines"
-            description="Hosting is persistent and stable (not sleeping Streamlit/Replit servers or raw Google Drive links)."
-            status={reviewChecklist['stage4_host_stable']}
-            onPass={() => handlePass('stage4_host_stable')}
-            onFail={() => handleFail('stage4_host_stable')}
+            label="2. Playable Deliverable URL Functional"
+            description="Interactive demo, binary release, or high-fidelity video runs without crashes and is persistently hosted."
+            status={reviewChecklist['stage4_playable_url_valid']}
+            onPass={() => handlePass('stage4_playable_url_valid')}
+            onFail={() => handleFail('stage4_playable_url_valid')}
           />
 
           <PassFailControl
-            label="Shipped Product Delivers Claimed Features"
-            description="All core interactive functionality claimed in requested hours is demonstrated in the deliverable."
-            status={reviewChecklist['stage4_features_delivered']}
-            onPass={() => handlePass('stage4_features_delivered')}
-            onFail={() => handleFail('stage4_features_delivered')}
+            label="3. Project Title Matches Shipped Codebase"
+            description={`Submitted project title "${project.projectName}" accurately reflects the application/repo.`}
+            status={reviewChecklist['stage4_title_correct']}
+            onPass={() => handlePass('stage4_title_correct')}
+            onFail={() => handleFail('stage4_title_correct')}
+          />
+
+          <PassFailControl
+            label="4. Submitter Handle Matches Author"
+            description={`Submitter handle @${project.githubUsername} matches the git commit history author.`}
+            status={reviewChecklist['stage4_handle_matches']}
+            onPass={() => handlePass('stage4_handle_matches')}
+            onFail={() => handleFail('stage4_handle_matches')}
+          />
+
+          <PassFailControl
+            label="5. Description Accurately Depicts Features"
+            description="Submission description provides a true, complete account of the features built during the logged time."
+            status={reviewChecklist['stage4_description_accurate']}
+            onPass={() => handlePass('stage4_description_accurate')}
+            onFail={() => handleFail('stage4_description_accurate')}
+          />
+
+          <PassFailControl
+            label="6. Uploaded Screenshot Matches Working Software"
+            description="The attached screenshot is authentic and matches the actual working software deliverable."
+            status={reviewChecklist['stage4_screenshot_verified']}
+            onPass={() => handlePass('stage4_screenshot_verified')}
+            onFail={() => handleFail('stage4_screenshot_verified')}
           />
         </div>
       </div>
