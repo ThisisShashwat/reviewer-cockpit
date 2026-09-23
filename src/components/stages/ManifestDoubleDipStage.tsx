@@ -302,150 +302,124 @@ export const ManifestDoubleDipStage: React.FC<ManifestDoubleDipStageProps> = ({
         <>
           {/* Critical Double-Dip Alert & Archive Comparison Panel */}
           {isDoubleDipDetected && matchingHalceonShip ? (
-            <div className="p-5 rounded-2xl bg-amber-950/40 border border-amber-500/50 text-amber-200 space-y-4 shadow-lg">
-              <div className="flex items-start gap-3">
-                <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
-                <div className="text-xs flex-1 space-y-1">
-                  <span className="font-bold text-sm block text-amber-300">
-                    CRITICAL DOUBLE-DIP AUDIT: Repository Previously Approved in {matchingHalceonShip.program} ({matchingHalceonShip.hours}h)
+            <div className="p-6 rounded-2xl bg-[#121214] border border-[#27272a] text-white space-y-4 shadow-xl">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#27272a] pb-4">
+                <div className="flex items-center gap-3">
+                  <span className="px-2.5 py-1 rounded-md text-xs font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                    CRITICAL DOUBLE-DIP DETECTED
                   </span>
-                  <p className="text-amber-200/90 leading-relaxed">
-                    This exact repository was already approved on <strong>{matchingHalceonShip.approvedAt}</strong>.
-                    <strong> DO NOT simply subtract prior hours ({matchingHalceonShip.hours}h) from requested hours ({project.submittedHours}h).</strong> The prior hours may be deflated, or the submitter may have resubmitted the exact same code with no new progress.
-                  </p>
-                </div>
-              </div>
-
-              {/* Archive & Codebase Progression Comparison Box */}
-              <div className="p-4 rounded-xl bg-[#121214] border border-[#27272a] space-y-3 text-xs">
-                <div className="flex items-center justify-between font-mono">
-                  <span className="text-[#a1a1aa] flex items-center gap-2">
-                    <Archive className="w-4 h-4 text-purple-400" />
-                    <span>Prior Approved Archive Snapshot:</span>
+                  <span className="text-xs text-[#a1a1aa]">
+                    Approved in <strong>{matchingHalceonShip.program}</strong> ({matchingHalceonShip.hours}h on {matchingHalceonShip.approvedAt})
                   </span>
-                  {priorArchiveLink ? (
-                    <a
-                      href={typeof priorArchiveLink === 'string' ? priorArchiveLink : priorArchiveLink.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="px-3 py-1 rounded-lg bg-purple-950/60 text-purple-300 border border-purple-500/40 hover:bg-purple-900/60 transition-colors inline-flex items-center gap-1.5 font-bold"
-                    >
-                      <Archive className="w-3.5 h-3.5" />
-                      <span>Download Prior Archive Snapshot</span>
-                      <ExternalLink className="w-3 h-3" />
-                    </a>
-                  ) : (
-                    <span className="text-amber-400/80 italic font-sans text-[11px]">
-                      Archive not preserved on record
-                    </span>
-                  )}
                 </div>
 
-                {/* Programmatically Discovered Baseline Commit */}
-                {archiveCommitLoading ? (
-                  <div className="p-3 rounded-xl bg-[#18181b] border border-[#27272a] text-zinc-400 flex items-center gap-2">
-                    <RefreshCw className="w-3.5 h-3.5 animate-spin text-purple-400" />
-                    <span>Querying archive remote git refs (git ls-remote)...</span>
-                  </div>
-                ) : archiveCommitData?.success && archiveCommitData.commitHash ? (
-                  <div className="p-3.5 rounded-xl bg-[#18181b] border border-purple-500/40 text-white space-y-2.5">
-                    <div className="flex items-center justify-between">
-                      <span className="text-purple-300 font-bold flex items-center gap-1.5 text-xs">
-                        <GitCommit className="w-4 h-4 text-purple-400" />
-                        Baseline Approved Commit: <code className="text-emerald-400 bg-black/60 px-2 py-0.5 rounded font-mono font-bold text-xs">{archiveCommitData.shortHash}</code>
-                      </span>
-                      <span className="text-[10px] text-zinc-400 font-mono bg-black/40 px-2 py-0.5 rounded border border-[#27272a]">
-                        Archive ID: {archiveCommitData.archiveId}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-2 pt-0.5 flex-wrap">
-                      <a
-                        href={`${project.codeUrl}/commit/${archiveCommitData.commitHash}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="px-2.5 py-1.5 rounded-lg bg-purple-950/60 text-purple-200 border border-purple-500/40 hover:bg-purple-900/60 transition-colors inline-flex items-center gap-1.5 font-mono text-[11px] font-semibold"
-                      >
-                        <span>View Commit {archiveCommitData.shortHash} on GitHub</span>
-                        <ExternalLink className="w-3 h-3" />
-                      </a>
-                      <a
-                        href={`${project.codeUrl}/compare/${archiveCommitData.commitHash}...HEAD`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="px-2.5 py-1.5 rounded-lg bg-brand-orange/20 text-orange-200 border border-brand-orange/40 hover:bg-brand-orange/30 transition-colors inline-flex items-center gap-1.5 font-mono text-[11px] font-bold"
-                      >
-                        <span>Compare New Work ({archiveCommitData.shortHash}...HEAD)</span>
-                        <ExternalLink className="w-3 h-3" />
-                      </a>
-                    </div>
-
-                    <div className="p-2 rounded bg-purple-950/30 border border-purple-500/20 text-[11px] text-purple-200/90 leading-relaxed">
-                      💡 <strong>Audit Baseline Established:</strong> Commits up to <code className="text-white font-mono">{archiveCommitData.shortHash}</code> were approved in prior ship &ldquo;{matchingHalceonShip.repo}&rdquo; ({matchingHalceonShip.hours}h). In Stage 4 (Commits & AI), any commits up to this hash will be tagged as historical, and only subsequent commits will count as eligible new engineering progress.
-                    </div>
-
-                    {/* Zero Progress Blocker Alert if Archive Baseline === HEAD */}
-                    {Boolean(
-                      archiveCommitData.commitHash &&
-                        gitHubData?.commits?.[0]?.sha &&
-                        (archiveCommitData.commitHash
-                          .toLowerCase()
-                          .startsWith(gitHubData.commits[0].sha.toLowerCase().slice(0, 7)) ||
-                          gitHubData.commits[0].sha
-                            .toLowerCase()
-                            .startsWith(archiveCommitData.commitHash.toLowerCase().slice(0, 7)))
-                    ) && (
-                      <div className="p-3 rounded-lg bg-rose-900/80 border border-rose-400 text-white text-xs font-semibold flex items-center justify-between gap-3 shadow-lg">
-                        <div className="flex items-center gap-2">
-                          <AlertTriangle className="w-5 h-5 text-rose-300 shrink-0" />
-                          <span>
-                            🚨 Identical to Repo HEAD: Prior approved archive commit ({archiveCommitData.shortHash}) matches the repository HEAD! Zero new commits have been pushed since prior ship &ldquo;{matchingHalceonShip.repo}&rdquo;.
-                          </span>
-                        </div>
-                        {onEarlyExit && (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              onEarlyExit(
-                                `Zero Progress Double-Dip: Repository HEAD is identical to previously approved archive commit (${archiveCommitData.shortHash}) from "${matchingHalceonShip.repo}"`
-                              )
-                            }
-                            className="px-3 py-1 rounded bg-rose-950 hover:bg-black text-white text-xs font-bold border border-rose-400 shrink-0 shadow-sm"
-                          >
-                            Reject for Zero Progress
-                          </button>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                ) : null}
-
-                <div className="flex items-center justify-between font-mono pt-2 border-t border-[#27272a]">
-                  <span className="text-[#a1a1aa] flex items-center gap-2">
-                    <GitCommit className="w-4 h-4 text-brand-orange" />
-                    <span>Current Repository Commits:</span>
-                  </span>
+                {priorArchiveLink && (
                   <a
-                    href={`${project.codeUrl}/commits`}
+                    href={typeof priorArchiveLink === 'string' ? priorArchiveLink : priorArchiveLink.url}
                     target="_blank"
                     rel="noreferrer"
-                    className="px-3 py-1 rounded-lg bg-[#27272a] text-white hover:text-brand-orange transition-colors inline-flex items-center gap-1.5 font-bold"
+                    className="px-3 py-1.5 rounded-lg bg-[#18181b] hover:bg-[#27272a] border border-[#27272a] text-xs font-mono font-semibold text-purple-300 inline-flex items-center gap-1.5 transition-colors"
                   >
-                    <span>Inspect Commits Since {matchingHalceonShip.approvedAt}</span>
+                    <Archive className="w-3.5 h-3.5" />
+                    <span>Download Prior Archive Snapshot</span>
                     <ExternalLink className="w-3 h-3" />
                   </a>
-                </div>
+                )}
+              </div>
 
-                <p className="text-[11px] text-[#a1a1aa] leading-relaxed pt-1">
-                  Rule: Compare the archived codebase snapshot against current code. If the code is identical or represents minor tweaks, grant <strong>0 new hours</strong>. If genuine new features were completed after {matchingHalceonShip.approvedAt}, grant only the hours corresponding to the new features.
+              {/* What Happens Policy Explanation */}
+              <div className="space-y-1.5 text-xs text-[#d4d4d8] leading-relaxed">
+                <h4 className="font-bold text-white text-sm">
+                  What happens when a project is double-dipped?
+                </h4>
+                <p>
+                  Per Hack Club guidelines, submitters <strong>cannot be credited twice for the same work</strong>. Continuing a project across programs is permitted, but <strong>only for new commits pushed after the previously approved ship</strong>. Do NOT simply subtract past hours ({matchingHalceonShip.hours}h) from claimed hours ({project.submittedHours}h). Instead, evaluate the delta diff.
                 </p>
               </div>
+
+              {/* Programmatically Discovered Baseline Commit */}
+              {archiveCommitLoading ? (
+                <div className="p-3.5 rounded-xl bg-[#18181b] border border-[#27272a] text-[#a1a1aa] flex items-center gap-2 text-xs">
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin text-[#ff6b35]" />
+                  <span>Looking up archive baseline commit hash via git ls-remote...</span>
+                </div>
+              ) : archiveCommitData?.success && archiveCommitData.commitHash ? (
+                <div className="p-4 rounded-xl bg-[#18181b] border border-purple-500/40 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <GitCommit className="w-4 h-4 text-purple-400" />
+                      <span className="text-xs font-bold text-white">Baseline Approved Commit:</span>
+                      <code className="text-emerald-400 bg-black/60 px-2 py-0.5 rounded font-mono font-bold text-xs">
+                        {archiveCommitData.shortHash}
+                      </code>
+                    </div>
+                    <span className="text-[10px] font-mono text-[#a1a1aa]">
+                      Archive Ref: {archiveCommitData.archiveId}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <a
+                      href={`${project.codeUrl}/commit/${archiveCommitData.commitHash}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="px-3 py-1.5 rounded-lg bg-[#27272a] hover:bg-[#3f3f46] text-white text-xs font-semibold inline-flex items-center gap-1.5 transition-colors"
+                    >
+                      <span>View Baseline Commit ({archiveCommitData.shortHash})</span>
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                    <a
+                      href={`${project.codeUrl}/compare/${archiveCommitData.commitHash}...HEAD`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="px-3 py-1.5 rounded-lg bg-[#ff6b35] hover:bg-[#ea580c] text-white text-xs font-bold inline-flex items-center gap-1.5 transition-colors shadow-sm"
+                    >
+                      <span>Inspect New Work on GitHub ({archiveCommitData.shortHash}...HEAD)</span>
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                  </div>
+
+                  {/* Critical Blocker: HEAD is Identical to Baseline */}
+                  {Boolean(
+                    archiveCommitData.commitHash &&
+                      gitHubData?.commits?.[0]?.sha &&
+                      (archiveCommitData.commitHash
+                        .toLowerCase()
+                        .startsWith(gitHubData.commits[0].sha.toLowerCase().slice(0, 7)) ||
+                        gitHubData.commits[0].sha
+                          .toLowerCase()
+                          .startsWith(archiveCommitData.commitHash.toLowerCase().slice(0, 7)))
+                  ) && (
+                    <div className="p-3.5 rounded-xl bg-rose-950/60 border border-rose-500/80 text-white text-xs flex items-center justify-between gap-3 shadow-lg">
+                      <div className="flex items-center gap-2">
+                        <AlertTriangle className="w-4 h-4 text-rose-300 shrink-0" />
+                        <span className="font-semibold">
+                          🚨 Zero Progress: Repository HEAD is identical to baseline commit ({archiveCommitData.shortHash}). No new commits exist since prior ship &ldquo;{matchingHalceonShip.repo}&rdquo;!
+                        </span>
+                      </div>
+                      {onEarlyExit && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            onEarlyExit(
+                              `Zero Progress Double-Dip: Repository HEAD is identical to previously approved archive commit (${archiveCommitData.shortHash}) from "${matchingHalceonShip.repo}"`
+                            )
+                          }
+                          className="px-3 py-1 rounded bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shrink-0 shadow-sm transition-colors cursor-pointer"
+                        >
+                          Reject for Zero Progress
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ) : null}
             </div>
           ) : similarHalceonShip || similarLiveSubmission ? (
-            <div className="p-4 rounded-xl bg-amber-950/30 border border-amber-500/30 text-amber-200 flex items-start gap-2.5 text-xs shadow-lg">
-              <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-              <div>
-                <span className="font-bold text-amber-300 block">
+            <div className="p-5 rounded-2xl bg-[#121214] border border-amber-500/40 text-white flex items-start gap-3 text-xs shadow-xl">
+              <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <span className="font-bold text-amber-300 block text-sm">
                   Similarity Notice: Prior Project with Similar Name Detected
                 </span>
                 <span className="text-amber-200/90 mt-0.5 block">
@@ -752,7 +726,7 @@ export const ManifestDoubleDipStage: React.FC<ManifestDoubleDipStageProps> = ({
             <button
               type="button"
               onClick={onAdvance}
-              className="px-5 py-2 rounded-lg bg-brand-orange text-white hover:bg-orange-600 text-xs font-semibold transition-colors shadow-sm flex items-center gap-1.5 cursor-pointer"
+              className="px-5 py-2.5 rounded-xl bg-[#ff6b35] text-white font-bold hover:bg-[#ea580c] transition-all shadow-md flex items-center gap-1.5 cursor-pointer text-xs"
             >
               <span>Next: Readme & Deliverables →</span>
             </button>

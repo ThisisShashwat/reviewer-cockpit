@@ -27,6 +27,8 @@ export default {
           tertiary: '#636366',  // Metadata, labels, timestamps
           muted: '#8e8e93',     // Subtle placeholder / disabled text
         },
+        'brand-orange': '#ff6b35',
+        'brand-red': '#ec3750',
         brand: {
           red: '#ec3750',       // Hack Club signature red
           orange: '#ff6b35',    // Horizons orange

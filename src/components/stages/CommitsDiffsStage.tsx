@@ -492,14 +492,14 @@ export const CommitsDiffsStage: React.FC<CommitsDiffsStageProps> = ({
 
       {/* GitHub Rate Limit Banner if hit */}
       {isRateLimited && (
-        <div className="p-4 rounded-xl bg-amber-950/40 border border-amber-500/40 text-amber-200 flex items-start gap-3 shadow-lg shrink-0">
+        <div className="p-4 rounded-2xl bg-[#121214] border border-amber-500/40 text-white flex items-start gap-3 shadow-xl shrink-0">
           <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
           <div className="text-xs space-y-1 flex-1">
             <span className="font-bold text-amber-300 block text-sm">
               GitHub API Unauthenticated Rate Limit Encountered
             </span>
-            <p className="text-amber-200/90 leading-relaxed">
-              GitHub limits unauthenticated API queries per IP. Commit diffs cannot be queried via API at this moment. Review commits directly on GitHub.
+            <p className="text-[#d4d4d8] leading-relaxed">
+              GitHub limits unauthenticated API queries to 60/hr per IP. Review commits directly on GitHub, or click the <strong>GH Token</strong> button in the top bar to raise your limit to 5,000 requests/hour.
             </p>
           </div>
         </div>
@@ -507,17 +507,17 @@ export const CommitsDiffsStage: React.FC<CommitsDiffsStageProps> = ({
 
       {/* AI Footprint & Heuristics Overview Strip */}
       <div
-        className={`p-4 rounded-2xl border text-white space-y-2 shadow-lg shrink-0 ${
+        className={`p-5 rounded-2xl border text-white space-y-3 shadow-xl shrink-0 bg-[#121214] ${
           overallAiEvaluation.level === 'high'
-            ? 'bg-rose-950/40 border-rose-500/50'
+            ? 'border-rose-500/60'
             : overallAiEvaluation.level === 'moderate'
-            ? 'bg-amber-950/40 border-amber-500/50'
-            : 'bg-[#121214] border-[#27272a]'
+            ? 'border-amber-500/60'
+            : 'border-[#27272a]'
         }`}
       >
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between border-b border-[#27272a] pb-3">
           <div className="flex items-center gap-2">
-            <Bot className="w-4 h-4 text-brand-orange" />
+            <Bot className="w-4 h-4 text-[#ff6b35]" />
             <span className="text-xs font-bold uppercase tracking-wider text-white">
               AI Footprint & Progression Evaluation
             </span>
@@ -539,10 +539,10 @@ export const CommitsDiffsStage: React.FC<CommitsDiffsStageProps> = ({
           </span>
         </div>
 
-        <ul className="text-xs space-y-1 text-[#d4d4d8] leading-relaxed">
+        <ul className="text-xs space-y-1.5 text-[#d4d4d8] leading-relaxed">
           {overallAiEvaluation.reasons.map((reason, idx) => (
             <li key={idx} className="flex items-start gap-2">
-              <span className="text-brand-orange mt-0.5">•</span>
+              <span className="text-[#ff6b35] mt-0.5 font-bold">•</span>
               <span>{reason}</span>
             </li>
           ))}
@@ -987,9 +987,9 @@ export const CommitsDiffsStage: React.FC<CommitsDiffsStageProps> = ({
         <button
           type="button"
           onClick={onAdvance}
-          className="px-5 py-2.5 rounded-lg bg-brand-orange text-white text-xs font-semibold hover:bg-orange-600 transition-colors shadow-sm cursor-pointer"
+          className="px-5 py-2.5 rounded-xl bg-[#ff6b35] text-white font-bold hover:bg-[#ea580c] transition-all shadow-md flex items-center gap-1.5 cursor-pointer text-xs"
         >
-          Next: Verdict Desk →
+          <span>Next: Verdict Desk →</span>
         </button>
       </div>
     </div>

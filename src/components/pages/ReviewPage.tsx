@@ -10,6 +10,7 @@ import {
   ShieldCheck,
   Lock,
   Unlock,
+  Key,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -18,6 +19,8 @@ import {
   GitHubRepoData,
   VerdictDetails,
 } from '../../lib/types';
+import { getGitHubToken } from '../../lib/api';
+import { GitHubTokenModal } from '../common/GitHubTokenModal';
 
 import { ReviewSidebar } from '../layout/ReviewSidebar';
 import { ManifestDoubleDipStage } from '../stages/ManifestDoubleDipStage';
@@ -81,6 +84,7 @@ export const ReviewPage: React.FC<ReviewPageProps> = ({
     shipName: string;
     archiveUrl: string;
   } | undefined>(undefined);
+  const [isTokenModalOpen, setIsTokenModalOpen] = useState(false);
 
   // Sync step changes upward
   const handleStepSelect = (step: ReviewStep) => {
@@ -190,8 +194,8 @@ export const ReviewPage: React.FC<ReviewPageProps> = ({
           )}
         </div>
 
-        {/* Center: Review Stage Stepper Pills */}
-        <div className="flex items-center gap-1 overflow-x-auto max-w-2xl px-2 py-1 scrollbar-none">
+        {/* Center: Review Stage Stepper Pills (No horizontal scrollbar) */}
+        <div className="flex items-center gap-1.5 shrink-0 select-none">
           {STEPS.map((s) => {
             const Icon = s.icon;
             const isActive = currentStep === s.id;
@@ -204,10 +208,10 @@ export const ReviewPage: React.FC<ReviewPageProps> = ({
                 onClick={() => handleStepSelect(s.id)}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
                   isActive
-                    ? 'bg-brand-orange text-white shadow-sm ring-2 ring-brand-orange/20'
+                    ? 'bg-[#ff6b35] text-white shadow-sm font-bold ring-2 ring-[#ff6b35]/20'
                     : isCompleted
-                    ? 'bg-canvas-subtle text-content-primary hover:bg-canvas-hover'
-                    : 'text-content-tertiary hover:text-content-primary hover:bg-canvas-subtle'
+                    ? 'bg-zinc-200/90 text-zinc-800 hover:bg-zinc-300'
+                    : 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100'
                 }`}
                 title={s.title}
               >
@@ -218,8 +222,18 @@ export const ReviewPage: React.FC<ReviewPageProps> = ({
           })}
         </div>
 
-        {/* Right: Prev / Next Stepping Controls */}
+        {/* Right: GitHub Token / Rate Limit & Stepping Controls */}
         <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => setIsTokenModalOpen(true)}
+            className="px-2.5 py-1.5 rounded-lg text-[11px] font-mono flex items-center gap-1.5 border border-border-subtle bg-canvas-card hover:bg-canvas-hover text-content-secondary hover:text-content-primary transition-colors cursor-pointer shadow-xs mr-1"
+            title="GitHub API Token & Rate Limits (Avoid 60/hr limit)"
+          >
+            <Key className="w-3.5 h-3.5 text-[#ff6b35]" />
+            <span>{getGitHubToken() ? 'GH: 5k/hr' : 'GH Token'}</span>
+          </button>
+
           <button
             type="button"
             onClick={onPrevProject}
@@ -312,6 +326,11 @@ export const ReviewPage: React.FC<ReviewPageProps> = ({
           )}
         </main>
       </div>
+
+      <GitHubTokenModal
+        isOpen={isTokenModalOpen}
+        onClose={() => setIsTokenModalOpen(false)}
+      />
     </div>
   );
 };

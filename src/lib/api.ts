@@ -22,6 +22,60 @@ import {
 } from './types';
 
 /**
+ * GitHub API Token & Rate-Limiting Management
+ */
+const REPO_CACHE_TTL = 15 * 60 * 1000; // 15 mins in-memory cache
+const repoCache = new Map<string, { data: Partial<GitHubRepoData>; timestamp: number }>();
+const commitDetailCache = new Map<string, any>();
+
+let lastRateLimitInfo: { limit: number; remaining: number; reset: number } | null = null;
+
+export function getGitHubToken(): string | null {
+  if (typeof window !== 'undefined') {
+    return localStorage.getItem('HC_GITHUB_TOKEN') || null;
+  }
+  return null;
+}
+
+export function setGitHubToken(token: string | null) {
+  if (typeof window !== 'undefined') {
+    if (token && token.trim().length > 0) {
+      localStorage.setItem('HC_GITHUB_TOKEN', token.trim());
+    } else {
+      localStorage.removeItem('HC_GITHUB_TOKEN');
+    }
+  }
+}
+
+export function getGitHubRateLimitInfo() {
+  return lastRateLimitInfo;
+}
+
+function getGitHubHeaders(): HeadersInit {
+  const headers: Record<string, string> = {
+    Accept: 'application/vnd.github.v3+json',
+  };
+  const token = getGitHubToken();
+  if (token) {
+    headers['Authorization'] = `token ${token}`;
+  }
+  return headers;
+}
+
+function updateRateLimit(res: Response) {
+  const remaining = res.headers.get('x-ratelimit-remaining');
+  const limit = res.headers.get('x-ratelimit-limit');
+  const reset = res.headers.get('x-ratelimit-reset');
+  if (remaining && limit) {
+    lastRateLimitInfo = {
+      remaining: parseInt(remaining, 10),
+      limit: parseInt(limit, 10),
+      reset: reset ? parseInt(reset, 10) : 0,
+    };
+  }
+}
+
+/**
  * Extracts owner and repo name from any GitHub URL
  */
 export function parseGitHubRepo(url: string): { owner: string; repo: string } | null {
@@ -52,12 +106,22 @@ export async function fetchGitHubRepoData(codeUrl: string): Promise<Partial<GitH
   }
 
   const { owner, repo } = parsed;
+  const cacheKey = `${owner.toLowerCase()}/${repo.toLowerCase()}`;
+
+  // Check in-memory cache
+  const cached = repoCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < REPO_CACHE_TTL) {
+    return cached.data;
+  }
 
   try {
     let isRateLimited = false;
     let repoJson: any = {};
+    const headers = getGitHubHeaders();
 
-    const repoRes = await fetch(`https://api.github.com/repos/${owner}/${repo}`);
+    const repoRes = await fetch(`https://api.github.com/repos/${owner}/${repo}`, { headers });
+    updateRateLimit(repoRes);
+
     if (repoRes.status === 404) {
       return {
         owner,
@@ -76,22 +140,32 @@ export async function fetchGitHubRepoData(codeUrl: string): Promise<Partial<GitH
     let commits: GitHubRepoData['commits'] = [];
     if (!isRateLimited) {
       try {
-        const commitsRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/commits?per_page=15`);
+        const commitsRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/commits?per_page=15`, { headers });
+        updateRateLimit(commitsRes);
+
         if (commitsRes.status === 403) {
           isRateLimited = true;
         } else if (commitsRes.ok) {
           const commitsJson = await commitsRes.json();
           
-          // Fetch detailed stats (additions, deletions, files) for each commit in parallel
+          // Fetch detailed stats (additions, deletions, files) for top 8 commits
           commits = await Promise.all(
-            (commitsJson || []).slice(0, 10).map(async (c: any) => {
+            (commitsJson || []).slice(0, 8).map(async (c: any) => {
               let additions = 0;
               let deletions = 0;
               let files: any[] = [];
               let htmlUrl = c.html_url || `https://github.com/${owner}/${repo}/commit/${c.sha}`;
 
+              const commitCacheKey = `${cacheKey}/${c.sha}`;
+              const cachedDetail = commitDetailCache.get(commitCacheKey);
+              if (cachedDetail) {
+                return cachedDetail;
+              }
+
               try {
-                const detailRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/commits/${c.sha}`);
+                const detailRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/commits/${c.sha}`, { headers });
+                updateRateLimit(detailRes);
+
                 if (detailRes.ok) {
                   const detailJson = await detailRes.json();
                   additions = detailJson.stats?.additions || 0;
@@ -108,7 +182,7 @@ export async function fetchGitHubRepoData(codeUrl: string): Promise<Partial<GitH
                 // detail fetch non-fatal
               }
 
-              return {
+              const commitObj = {
                 sha: c.sha,
                 shortSha: (c.sha || '').substring(0, 7),
                 message: c.commit?.message || '',
@@ -119,6 +193,8 @@ export async function fetchGitHubRepoData(codeUrl: string): Promise<Partial<GitH
                 deletions,
                 files
               };
+              commitDetailCache.set(commitCacheKey, commitObj);
+              return commitObj;
             })
           );
         }
@@ -131,7 +207,8 @@ export async function fetchGitHubRepoData(codeUrl: string): Promise<Partial<GitH
     let files: GitHubRepoData['files'] = [];
     if (!isRateLimited) {
       try {
-        const contentsRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents`);
+        const contentsRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents`, { headers });
+        updateRateLimit(contentsRes);
         if (contentsRes.ok) {
           const contentsJson = await contentsRes.json();
           files = (contentsJson || []).map((f: any) => ({
@@ -171,7 +248,8 @@ export async function fetchGitHubRepoData(codeUrl: string): Promise<Partial<GitH
     // 5. Fetch GitHub Releases
     let releases: GitHubRepoData['releases'] = [];
     try {
-      const releasesRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/releases`);
+      const releasesRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/releases`, { headers });
+      updateRateLimit(releasesRes);
       if (releasesRes.ok) {
         const releasesJson = await releasesRes.json();
         releases = (releasesJson || []).map((r: any) => ({
@@ -197,7 +275,7 @@ export async function fetchGitHubRepoData(codeUrl: string): Promise<Partial<GitH
       hardwareExts.some(ext => f.name.toLowerCase().endsWith(ext))
     );
 
-    return {
+    const result: Partial<GitHubRepoData> = {
       owner,
       repo,
       fullName: repoJson.full_name || `${owner}/${repo}`,
@@ -219,6 +297,9 @@ export async function fetchGitHubRepoData(codeUrl: string): Promise<Partial<GitH
       isRateLimited,
       isLoading: false
     };
+
+    repoCache.set(cacheKey, { data: result, timestamp: Date.now() });
+    return result;
   } catch (err: any) {
     return {
       owner,

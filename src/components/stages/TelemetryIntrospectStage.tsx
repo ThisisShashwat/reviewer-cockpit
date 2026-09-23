@@ -6,7 +6,6 @@ import {
   Code2,
   ExternalLink,
   FolderCheck,
-  Layers,
   RefreshCw,
   Undo2,
 } from 'lucide-react';
@@ -381,29 +380,14 @@ export const TelemetryIntrospectStage: React.FC<TelemetryIntrospectStageProps> =
       </div>
 
       {/* BOTTOM SECTION: Seamless Integrated Introspect Timeline Frame */}
-      <div className="bg-[#121214] border border-[#27272a] rounded-2xl flex flex-col overflow-hidden shadow-xl flex-1 min-h-[520px]">
-        <div className="p-3.5 bg-[#18181b] border-b border-[#27272a] flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Layers className="w-4 h-4 text-brand-orange" />
-            <span className="text-xs font-bold uppercase tracking-wider text-white">
-              Integrated Development Timeline & Session Inspector
-            </span>
-          </div>
-
-          <div className="flex items-center gap-2 font-mono text-xs text-[#a1a1aa]">
-            <span>repo: {project.codeUrl?.replace('https://github.com/', '')}</span>
-          </div>
-        </div>
-
-        <div className="flex-1 w-full bg-white relative">
-          <iframe
-            key={iframeKey}
-            src={introspectUrl}
-            title="Development Timeline Inspector"
-            className="w-full h-full min-h-[500px] border-0"
-            sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
-          />
-        </div>
+      <div className="rounded-2xl border border-border-subtle bg-white overflow-hidden shadow-sm flex-1 min-h-[560px]">
+        <iframe
+          key={iframeKey}
+          src={introspectUrl}
+          title="Development Timeline Inspector"
+          className="w-full h-full min-h-[550px] border-0"
+          sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+        />
       </div>
 
       {/* Footer Navigation Bar */}
@@ -417,9 +401,9 @@ export const TelemetryIntrospectStage: React.FC<TelemetryIntrospectStageProps> =
         <button
           type="button"
           onClick={onAdvance}
-          className="px-5 py-2.5 rounded-lg bg-brand-orange text-white text-xs font-semibold hover:bg-orange-600 transition-colors shadow-sm cursor-pointer"
+          className="px-5 py-2.5 rounded-xl bg-[#ff6b35] text-white font-bold hover:bg-[#ea580c] transition-all shadow-md flex items-center gap-1.5 cursor-pointer text-xs"
         >
-          Next: Commits & AI Forensics →
+          <span>Next: Commits & AI Forensics →</span>
         </button>
       </div>
     </div>

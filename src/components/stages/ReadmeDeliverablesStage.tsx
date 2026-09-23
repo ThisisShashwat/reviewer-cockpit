@@ -36,9 +36,9 @@ export const ReadmeDeliverablesStage: React.FC<ReadmeDeliverablesStageProps> = (
   reviewChecklist = {},
   onToggleChecklist,
 }) => {
-  const [activeTab, setActiveTab] = useState<'readme' | 'deliverable' | 'split'>('readme');
+  const [activeTab, setActiveTab] = useState<'readme' | 'deliverable' | 'split'>('split');
   const [viewportMode, setViewportMode] = useState<'desktop' | 'mobile'>('desktop');
-  const [isExpandedDesc, setIsExpandedDesc] = useState(false);
+  const [isExpandedDesc] = useState(false);
   const [iframeKey] = useState(0);
 
   const playableUrl = (project.playableUrl || '').trim();
@@ -273,14 +273,25 @@ export const ReadmeDeliverablesStage: React.FC<ReadmeDeliverablesStageProps> = (
 
         {/* View Layout Tabs */}
         <div className="flex items-center gap-2 shrink-0">
-          <div className="flex items-center bg-canvas-card border border-border-subtle rounded-lg p-0.5 shadow-sm text-xs">
+          <div className="flex items-center bg-canvas-card border border-border-subtle rounded-xl p-1 shadow-xs text-xs">
+            <button
+              type="button"
+              onClick={() => setActiveTab('split')}
+              className={`px-3.5 py-1.5 rounded-lg font-semibold transition-all cursor-pointer ${
+                activeTab === 'split'
+                  ? 'bg-[#ff6b35] text-white shadow-xs font-bold'
+                  : 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100'
+              }`}
+            >
+              Split View
+            </button>
             <button
               type="button"
               onClick={() => setActiveTab('readme')}
-              className={`px-3 py-1.5 rounded-md font-medium transition-colors ${
+              className={`px-3.5 py-1.5 rounded-lg font-semibold transition-all cursor-pointer ${
                 activeTab === 'readme'
-                  ? 'bg-brand-orange text-white font-semibold'
-                  : 'text-content-secondary hover:text-content-primary'
+                  ? 'bg-[#ff6b35] text-white shadow-xs font-bold'
+                  : 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100'
               }`}
             >
               README View
@@ -288,24 +299,13 @@ export const ReadmeDeliverablesStage: React.FC<ReadmeDeliverablesStageProps> = (
             <button
               type="button"
               onClick={() => setActiveTab('deliverable')}
-              className={`px-3 py-1.5 rounded-md font-medium transition-colors ${
+              className={`px-3.5 py-1.5 rounded-lg font-semibold transition-all cursor-pointer ${
                 activeTab === 'deliverable'
-                  ? 'bg-brand-orange text-white font-semibold'
-                  : 'text-content-secondary hover:text-content-primary'
+                  ? 'bg-[#ff6b35] text-white shadow-xs font-bold'
+                  : 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100'
               }`}
             >
               Deliverable & Demo
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('split')}
-              className={`px-3 py-1.5 rounded-md font-medium transition-colors hidden md:block ${
-                activeTab === 'split'
-                  ? 'bg-brand-orange text-white font-semibold'
-                  : 'text-content-secondary hover:text-content-primary'
-              }`}
-            >
-              Split View
             </button>
           </div>
         </div>
@@ -366,8 +366,8 @@ export const ReadmeDeliverablesStage: React.FC<ReadmeDeliverablesStageProps> = (
           </div>
         </div>
 
-        {/* 7 Interactive Criteria Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+        {/* 7 Interactive Criteria Cards + 1 Summary Card (Exact 4x2 Symmetrical Grid) */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
           {shippedChecks.map((check) => {
             const isExplicitlyPassed = reviewChecklist[check.checkKey] === true;
             const isExplicitlyFailed = reviewChecklist[check.checkKey] === false;
@@ -377,27 +377,21 @@ export const ReadmeDeliverablesStage: React.FC<ReadmeDeliverablesStageProps> = (
             return (
               <div
                 key={check.id}
-                className={`p-3 rounded-xl border flex flex-col justify-between transition-colors ${
-                  isExplicitlyFailed || (!check.autoPass && !isExplicitlyPassed)
-                    ? 'bg-rose-950/30 border-rose-500/40 text-white'
-                    : isCurrentPassed
-                    ? 'bg-[#18181b] border-[#27272a] text-white'
-                    : 'bg-[#18181b] border-[#27272a] text-white'
-                }`}
+                className="p-3.5 rounded-xl border border-[#27272a] bg-[#18181b] text-white flex flex-col justify-between h-[128px] shadow-sm transition-colors"
               >
-                <div className="space-y-1.5">
+                <div className="space-y-1">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                    <span className="text-xs font-bold text-white flex items-center gap-1.5 truncate">
                       {isCurrentPassed ? (
                         <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
                       ) : (
                         <XCircle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
                       )}
-                      <span>{check.label}</span>
+                      <span className="truncate">{check.label}</span>
                     </span>
 
                     <span
-                      className={`px-1.5 py-0.2 rounded text-[10px] font-mono font-bold uppercase ${
+                      className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-bold uppercase shrink-0 ${
                         isCurrentPassed
                           ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
                           : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
@@ -407,44 +401,24 @@ export const ReadmeDeliverablesStage: React.FC<ReadmeDeliverablesStageProps> = (
                     </span>
                   </div>
 
-                  <div className="text-[11px] text-[#a1a1aa] min-h-[32px] break-words">
+                  <div className="text-[11px] text-[#a1a1aa] line-clamp-2 h-[34px] leading-tight flex items-center">
                     {check.isLink ? (
                       <a
                         href={check.url}
                         target="_blank"
                         rel="noreferrer"
-                        className="text-brand-orange hover:underline font-mono inline-flex items-center gap-1"
+                        className="text-[#ff6b35] hover:underline font-mono inline-flex items-center gap-1 truncate"
                       >
-                        <span className="truncate max-w-[190px]">{check.desc}</span>
+                        <span className="truncate">{check.desc}</span>
                         <ExternalLink className="w-2.5 h-2.5 shrink-0" />
                       </a>
                     ) : (
                       <p className="line-clamp-2">{check.desc}</p>
                     )}
-                    {check.canExpand && (
-                      <button
-                        type="button"
-                        onClick={() => setIsExpandedDesc(!isExpandedDesc)}
-                        className="text-[10px] text-brand-orange hover:underline mt-0.5 block"
-                      >
-                        {isExpandedDesc ? 'Show less' : 'View full description'}
-                      </button>
-                    )}
                   </div>
-
-                  {check.thumbnail && (
-                    <div className="pt-1">
-                      <img
-                        src={check.thumbnail}
-                        alt="Screenshot thumbnail"
-                        className="w-full h-16 object-cover rounded-lg border border-[#27272a] bg-black/40 cursor-pointer hover:opacity-90"
-                        onClick={() => setActiveTab('deliverable')}
-                      />
-                    </div>
-                  )}
                 </div>
 
-                <div className="pt-2.5 mt-2 border-t border-[#27272a] flex items-center justify-between">
+                <div className="pt-2 border-t border-[#27272a] flex items-center justify-between">
                   <span className="text-[10px] text-[#71717a] font-mono">Verdict</span>
                   <PassFailControl
                     label={check.label}
@@ -458,6 +432,43 @@ export const ReadmeDeliverablesStage: React.FC<ReadmeDeliverablesStageProps> = (
               </div>
             );
           })}
+
+          {/* 8th Slot: Uniform Shipped Requirements Audit Summary Card */}
+          <div className="p-3.5 rounded-xl border border-[#27272a] bg-[#18181b] text-white flex flex-col justify-between h-[128px] shadow-sm">
+            <div className="space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                  <PackageCheck className="w-3.5 h-3.5 text-[#ff6b35]" />
+                  <span>Audit Summary</span>
+                </span>
+                <span
+                  className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-bold uppercase ${
+                    passedCount === 7
+                      ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                      : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                  }`}
+                >
+                  {passedCount}/7
+                </span>
+              </div>
+              <p className="text-[11px] text-[#a1a1aa] line-clamp-2 h-[34px] leading-tight flex items-center">
+                {passedCount === 7
+                  ? 'All 7 mandatory GitBook criteria verified.'
+                  : `${7 - passedCount} requirement(s) missing or pending pass.`}
+              </p>
+            </div>
+
+            <div className="pt-2 border-t border-[#27272a] flex items-center justify-between">
+              <span className="text-[10px] text-[#71717a] font-mono">Batch Action</span>
+              <button
+                type="button"
+                onClick={handleBatchApproveAll}
+                className="px-2.5 py-1 rounded-md text-[11px] font-semibold bg-[#27272a] hover:bg-[#3f3f46] text-[#e4e4e7] transition-colors cursor-pointer"
+              >
+                Approve All 7
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -819,9 +830,9 @@ export const ReadmeDeliverablesStage: React.FC<ReadmeDeliverablesStageProps> = (
         <button
           type="button"
           onClick={onAdvance}
-          className="px-5 py-2.5 rounded-lg bg-brand-orange text-white text-xs font-semibold hover:bg-orange-600 transition-colors shadow-sm cursor-pointer"
+          className="px-5 py-2.5 rounded-xl bg-[#ff6b35] text-white font-bold hover:bg-[#ea580c] transition-all shadow-md flex items-center gap-1.5 cursor-pointer text-xs"
         >
-          Next: Telemetry & Introspect →
+          <span>Next: Telemetry & Introspect →</span>
         </button>
       </div>
     </div>

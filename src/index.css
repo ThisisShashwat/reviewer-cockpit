@@ -168,3 +168,29 @@ button:active:not(:disabled) {
   font-weight: 600;
   color: #111113;
 }
+
+/* Ensure brand-orange and high-contrast buttons are never transparent/invisible */
+.bg-brand-orange {
+  background-color: #ff6b35 !important;
+}
+
+.text-brand-orange {
+  color: #ff6b35 !important;
+}
+
+.border-brand-orange {
+  border-color: #ff6b35 !important;
+}
+
+.hover\:bg-orange-600:hover {
+  background-color: #ea580c !important;
+}
+
+/* Universal scrollbar hide */
+.no-scrollbar::-webkit-scrollbar {
+  display: none !important;
+}
+.no-scrollbar {
+  -ms-overflow-style: none !important;
+  scrollbar-width: none !important;
+}
