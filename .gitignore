@@ -14,6 +14,8 @@ dist-ssr
 *.tsbuildinfo
 data/*.json
 !data/seed.json
+data/*.html
+data/*.py
 
 # Editor directories and files
 .vscode/*

@@ -7,12 +7,19 @@ export default defineConfig({
   server: {
     host: '0.0.0.0',
     port: 5173,
-    allowedHosts: true, // Allow Tailscale ("rpi", "*.ts.net") and LAN hosts
+    allowedHosts: true, // Allow Tailscale ("rpi", "*.ts.net"), LAN IPs, and localhost
+    cors: true,
     proxy: {
       '/api': {
         target: 'http://localhost:3001',
         changeOrigin: true,
       },
     },
+  },
+  preview: {
+    host: '0.0.0.0',
+    port: 5173,
+    allowedHosts: true,
+    cors: true,
   },
 });
