@@ -363,6 +363,20 @@ apiRouter.get("/halceon/:username", async (req, res) => {
       return;
     }
 
+function decodeHtmlEntities(str: string): string {
+  if (!str) return '';
+  return str
+    .replace(/&#39;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&#x27;/g, "'")
+    .replace(/&#x2F;/g, '/')
+    .replace(/&#(\d+);/g, (_, dec) => String.fromCharCode(dec))
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
+}
+
     const rowRegex = /<tr>\s*<td class="mono nowrap">(.*?)<\/td>\s*<td class="mono nowrap">(.*?)<\/td>\s*<td class="desc">(.*?)<\/td>\s*<td class="mono center">(\d+(?:\.\d+)?)<\/td>\s*<td class="mono center">.*?<\/td>\s*<td class="mono">.*?<\/td>\s*<td class="mono nowrap">(.*?)<\/td>\s*<td class="links nowrap">(.*?)<\/td>/gis;
 
     const ships: Array<{
@@ -372,20 +386,67 @@ apiRouter.get("/halceon/:username", async (req, res) => {
       hours: number;
       approvedAt: string;
       links: string[];
+      parsedLinks: Array<{
+        label: string;
+        url: string;
+        isArchive: boolean;
+        type: 'repo' | 'demo' | 'archive_repo' | 'archive_demo' | 'image' | 'other';
+      }>;
     }> = [];
 
     let match;
     while ((match = rowRegex.exec(html)) !== null) {
-      const rawRepo = match[1].replace(/<[^>]+>/g, "").replace(/\s+/g, "").trim();
-      const program = match[2].replace(/<[^>]+>/g, "").trim();
-      const desc = match[3]
+      const rawRepo = decodeHtmlEntities(match[1].replace(/<[^>]+>/g, "").replace(/\s+/g, "").trim());
+      const program = decodeHtmlEntities(match[2].replace(/<[^>]+>/g, "").trim());
+      const rawDesc = match[3]
         .replace(/<summary>.*?<\/summary>/is, "")
         .replace(/<[^>]+>/g, "")
         .trim() || match[3].replace(/<[^>]+>/g, "").trim();
+      const desc = decodeHtmlEntities(rawDesc);
       const hours = parseFloat(match[4]) || 0;
       const approvedAt = match[5].replace(/<[^>]+>/g, "").trim();
       const linksHtml = match[6];
-      const linkMatches = [...linksHtml.matchAll(/href="([^"]+)"/g)].map((m) => m[1]);
+
+      // Extract all links with labels and archive flags (can range from 1 to 4+)
+      const parsedLinks: Array<{
+        label: string;
+        url: string;
+        isArchive: boolean;
+        type: 'repo' | 'demo' | 'archive_repo' | 'archive_demo' | 'image' | 'other';
+      }> = [];
+
+      const linkTagRegex = /<a\s+[^>]*href="([^"]+)"[^>]*>(.*?)<\/a>/gis;
+      let lMatch;
+      while ((lMatch = linkTagRegex.exec(linksHtml)) !== null) {
+        const linkUrl = lMatch[1];
+        const rawLabel = lMatch[2].replace(/<[^>]+>/g, "").trim();
+        const isArchive =
+          rawLabel.includes("*") ||
+          linkUrl.includes("archive.hackclub.com") ||
+          linkUrl.includes("archive.org");
+
+        let type: 'repo' | 'demo' | 'archive_repo' | 'archive_demo' | 'image' | 'other' = 'other';
+        if (rawLabel.startsWith("repo*") || (isArchive && (linkUrl.includes("github.com") || rawLabel.includes("repo")))) {
+          type = 'archive_repo';
+        } else if (rawLabel.startsWith("demo*") || (isArchive && rawLabel.includes("demo"))) {
+          type = 'archive_demo';
+        } else if (rawLabel.startsWith("repo") || linkUrl.includes("github.com")) {
+          type = 'repo';
+        } else if (rawLabel.startsWith("demo")) {
+          type = 'demo';
+        } else if (rawLabel.startsWith("img") || linkUrl.includes("airtableusercontent.com")) {
+          type = 'image';
+        } else if (isArchive) {
+          type = 'archive_repo';
+        }
+
+        parsedLinks.push({
+          label: rawLabel,
+          url: linkUrl,
+          isArchive,
+          type,
+        });
+      }
 
       ships.push({
         repo: rawRepo,
@@ -393,7 +454,8 @@ apiRouter.get("/halceon/:username", async (req, res) => {
         description: desc,
         hours,
         approvedAt,
-        links: linkMatches,
+        links: parsedLinks.map((p) => p.url),
+        parsedLinks,
       });
     }
 

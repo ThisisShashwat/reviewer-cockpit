@@ -8,7 +8,6 @@ import {
   Check,
   ChevronDown,
   ChevronUp,
-  Terminal,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { saveProjectNote } from '../../lib/api';
@@ -95,7 +94,7 @@ export const ReviewSidebar: React.FC<ReviewSidebarProps> = ({
           </div>
         </div>
 
-        {/* Quick Links with Copy, Open, and Airlock Sandbox */}
+        {/* Quick Links with Copy and Open */}
         <div className="space-y-1.5 pt-1">
           {project.codeUrl && (
             <div className="flex items-center justify-between p-2 rounded-lg bg-[#18181b] border border-[#27272a] text-xs">
@@ -128,27 +127,6 @@ export const ReviewSidebar: React.FC<ReviewSidebarProps> = ({
                   <ExternalLink className="w-3 h-3" />
                 </a>
               </div>
-            </div>
-          )}
-
-          {project.codeUrl && (
-            <div className="flex items-center justify-between p-2 rounded-lg bg-[#18181b] border border-[#27272a] text-xs">
-              <div className="flex items-center gap-1.5 min-w-0">
-                <Terminal className="w-3.5 h-3.5 text-brand-orange shrink-0" />
-                <span className="font-mono text-[#d4d4d8] truncate text-[11px]">
-                  Airlock Sandboxed VM
-                </span>
-              </div>
-              <a
-                href={`https://airlock.hackclub.com/?r=${encodeURIComponent(project.codeUrl)}`}
-                target="_blank"
-                rel="noreferrer"
-                className="px-2 py-0.5 rounded text-[10px] font-mono font-semibold bg-brand-orange text-white hover:bg-orange-600 transition-colors inline-flex items-center gap-1 shrink-0"
-                title="Launch in browser sandbox VM"
-              >
-                <span>Launch</span>
-                <ExternalLink className="w-2.5 h-2.5" />
-              </a>
             </div>
           )}
 

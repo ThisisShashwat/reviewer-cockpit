@@ -260,6 +260,13 @@ export interface HackatimeProjectStats {
   error?: string;
 }
 
+export interface HalceonShipLink {
+  label: string;
+  url: string;
+  isArchive: boolean;
+  type: 'repo' | 'demo' | 'archive_repo' | 'archive_demo' | 'image' | 'other';
+}
+
 export interface HalceonShip {
   repo: string;
   program: string;
@@ -267,6 +274,7 @@ export interface HalceonShip {
   hours: number;
   approvedAt: string;
   links: string[];
+  parsedLinks?: HalceonShipLink[];
 }
 
 export interface HalceonProfileData {

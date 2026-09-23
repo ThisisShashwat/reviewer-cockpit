@@ -9,6 +9,7 @@ import {
   FolderCheck,
   RefreshCw,
   HelpCircle,
+  Lock,
 } from 'lucide-react';
 import { fetchHackatimeData } from '../../lib/api';
 import { CockpitProject, HackatimeProjectStats } from '../../lib/types';
@@ -29,21 +30,26 @@ export const HackatimeSanityStage: React.FC<HackatimeSanityStageProps> = ({
   reviewChecklist = {},
   onToggleChecklist,
 }) => {
+  const selectedProjName = (project.hackatimeProjects || '').trim();
+  const initialCleanName = selectedProjName.replace(/\s*\([^)]*\)/g, '').trim() || project.projectName;
+
+  const [activeProjectName, setActiveProjectName] = useState(initialCleanName);
   const [stats, setStats] = useState<Partial<HackatimeProjectStats> | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [flagNote, setFlagNote] = useState('');
   const [isFlagging, setIsFlagging] = useState(false);
   const [activeLangTab, setActiveLangTab] = useState<'project' | 'lifetime'>('project');
 
-  const selectedProjName = (project.hackatimeProjects || '').trim();
-  const cleanProjectName = selectedProjName.replace(/\s*\([^)]*\)/g, '').trim();
+  useEffect(() => {
+    setActiveProjectName(initialCleanName);
+  }, [project.id, initialCleanName]);
 
   useEffect(() => {
     let mounted = true;
     setIsLoading(true);
 
     if (project.hackatimeId) {
-      fetchHackatimeData(project.hackatimeId, cleanProjectName)
+      fetchHackatimeData(project.hackatimeId, activeProjectName)
         .then((res) => {
           if (mounted) {
             setStats(res);
@@ -53,7 +59,7 @@ export const HackatimeSanityStage: React.FC<HackatimeSanityStageProps> = ({
         .catch(() => {
           if (mounted) {
             setStats({
-              error: 'Hackatime API unreachable',
+              error: 'Hackatime API unreachable or profile is private',
               isProjectFound: false,
             });
             setIsLoading(false);
@@ -70,7 +76,7 @@ export const HackatimeSanityStage: React.FC<HackatimeSanityStageProps> = ({
     return () => {
       mounted = false;
     };
-  }, [project.hackatimeId, cleanProjectName]);
+  }, [project.hackatimeId, activeProjectName]);
 
   const availableProjects = stats?.projects || [];
   const isHighClaimedHours = project.submittedHours > 24;
@@ -94,6 +100,8 @@ export const HackatimeSanityStage: React.FC<HackatimeSanityStageProps> = ({
     }
   };
 
+  const isPrivateOrEmpty = !isLoading && project.hackatimeId && availableProjects.length === 0;
+
   return (
     <div className="h-full overflow-y-auto p-8 space-y-6 max-w-5xl mx-auto flex flex-col">
       {/* Stage Header */}
@@ -109,16 +117,16 @@ export const HackatimeSanityStage: React.FC<HackatimeSanityStageProps> = ({
             Project-Specific Editor Telemetry
           </h2>
           <p className="text-xs text-content-tertiary mt-1 max-w-2xl">
-            Audit coding hours and languages filtered strictly for <strong className="text-content-primary font-mono">{cleanProjectName || project.projectName}</strong> via public Hackatime telemetry.
+            Audit coding hours and languages filtered strictly for <strong className="text-content-primary font-mono">{activeProjectName}</strong> via public Hackatime telemetry.
           </p>
         </div>
 
         {project.hackatimeId && (
           <a
-            href={`https://hackatime.hackclub.com/api/v1/users/${encodeURIComponent(project.hackatimeId)}/stats?filter_by_project=${encodeURIComponent(cleanProjectName)}`}
+            href={`https://hackatime.hackclub.com/api/v1/users/${encodeURIComponent(project.hackatimeId)}/stats?filter_by_project=${encodeURIComponent(activeProjectName)}`}
             target="_blank"
             rel="noreferrer"
-            className="px-3 py-1.5 rounded-lg bg-canvas-card border border-border-subtle text-xs font-medium text-content-secondary hover:text-content-primary hover:bg-canvas-hover flex items-center gap-1.5 transition-colors shadow-sm shrink-0"
+            className="px-3 py-1.5 rounded-lg bg-canvas-card border border-border-subtle text-xs font-medium text-content-secondary hover:text-content-primary hover:bg-canvas-hover flex items-center gap-1.5 transition-colors shadow-sm shrink-0 cursor-pointer"
           >
             <Activity className="w-3.5 h-3.5 text-brand-orange" />
             <span>Raw Hackatime API</span>
@@ -134,6 +142,25 @@ export const HackatimeSanityStage: React.FC<HackatimeSanityStageProps> = ({
         </div>
       ) : (
         <>
+          {/* Missing Telemetry / Private Account Diagnostic Banner */}
+          {isPrivateOrEmpty && (
+            <div className="p-4 rounded-xl bg-amber-950/40 border border-amber-500/40 text-amber-200 space-y-2 text-xs shadow-lg">
+              <div className="flex items-start gap-2.5">
+                <Lock className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <span className="font-bold text-amber-300 block">
+                    Telemetry Unavailable: Account May Be Private or Heartbeats Not Recorded
+                  </span>
+                  <p className="text-amber-200/90 leading-relaxed">
+                    Hackatime returned 0 projects for user ID <strong>{project.hackatimeId}</strong>.
+                    <br />• <strong>Private Account Setting:</strong> By default heartbeats are public, but the user may have configured their account as private.
+                    <br />• <strong>Token / Editor Disconnect:</strong> The editor extension may not have synced heartbeats during the build window.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* High Hours Velocity Warning Banner */}
           {isHighClaimedHours && (
             <div className="p-4 rounded-xl bg-amber-950/40 border border-amber-500/40 text-amber-200 flex items-start gap-2.5 text-xs shadow-lg">
@@ -149,6 +176,35 @@ export const HackatimeSanityStage: React.FC<HackatimeSanityStageProps> = ({
             </div>
           )}
 
+          {/* Interactive Renamed Project Switcher (When project name differs from local folder name) */}
+          {availableProjects.length > 0 && !stats?.isProjectFound && (
+            <div className="p-4 rounded-xl bg-[#18181b] border border-amber-500/30 text-white space-y-2 text-xs shadow-lg">
+              <div className="flex items-center justify-between">
+                <span className="text-amber-400 font-semibold flex items-center gap-1.5">
+                  <HelpCircle className="w-3.5 h-3.5" />
+                  &ldquo;{activeProjectName}&rdquo; not matched in user&apos;s {availableProjects.length} tracked projects (folder may be renamed)
+                </span>
+                <span className="text-[#a1a1aa] text-[11px]">Click an alternative project to re-filter:</span>
+              </div>
+              <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                {availableProjects.map((pName) => (
+                  <button
+                    key={pName}
+                    type="button"
+                    onClick={() => setActiveProjectName(pName)}
+                    className={`px-2.5 py-1 rounded-md text-[11px] font-mono transition-colors cursor-pointer ${
+                      activeProjectName.toLowerCase() === pName.toLowerCase()
+                        ? 'bg-brand-orange text-white font-bold'
+                        : 'bg-[#27272a] text-[#d4d4d8] hover:bg-[#3f3f46]'
+                    }`}
+                  >
+                    {pName}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Metric Comparison Strip: Project-Specific vs Claimed vs Lifetime (Dark Console Cards) */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {/* Card 1: Tracked Project & Alignment */}
@@ -158,7 +214,7 @@ export const HackatimeSanityStage: React.FC<HackatimeSanityStageProps> = ({
                 Tracked Project Name
               </span>
               <div className="text-base font-bold font-mono text-white truncate">
-                {cleanProjectName || 'None specified'}
+                {activeProjectName || 'None specified'}
               </div>
               <div className="pt-1">
                 {stats?.isProjectFound ? (
@@ -171,7 +227,7 @@ export const HackatimeSanityStage: React.FC<HackatimeSanityStageProps> = ({
                   </span>
                 ) : (
                   <span className="text-[11px] text-[#71717a]">
-                    No project list returned
+                    No project list returned (Profile private)
                   </span>
                 )}
               </div>
@@ -285,7 +341,7 @@ export const HackatimeSanityStage: React.FC<HackatimeSanityStageProps> = ({
               </div>
             ) : (
               <div className="py-6 text-center text-xs text-[#71717a] bg-[#18181b] rounded-xl border border-[#27272a]">
-                No language telemetry recorded for {cleanProjectName || 'this project'}.
+                No language telemetry recorded for {activeProjectName}.
               </div>
             )}
           </div>
@@ -302,15 +358,15 @@ export const HackatimeSanityStage: React.FC<HackatimeSanityStageProps> = ({
             <div className="space-y-2.5">
               <PassFailControl
                 label="Hackatime Heartbeats Exist and Timestamped"
-                description="Heartbeats logged during the project development window matching claimed hours."
+                description="Heartbeats logged during the project development window matching claimed hours (or private account verified)."
                 status={reviewChecklist['stage0_heartbeats_verified']}
                 onPass={() => handlePass('stage0_heartbeats_verified')}
                 onFail={() => handleFail('stage0_heartbeats_verified')}
               />
 
               <PassFailControl
-                label={<span>Project Name <strong className="font-mono text-white">{cleanProjectName || project.projectName}</strong> Aligns</span>}
-                description="Selected Hackatime project name corresponds directly with the submitted codebase."
+                label={<span>Project Name <strong className="font-mono text-white">{activeProjectName}</strong> Aligns</span>}
+                description="Selected Hackatime project name corresponds directly with the submitted codebase (or alias verified)."
                 status={reviewChecklist['stage0_project_aligned']}
                 onPass={() => handlePass('stage0_project_aligned')}
                 onFail={() => handleFail('stage0_project_aligned')}
@@ -334,7 +390,7 @@ export const HackatimeSanityStage: React.FC<HackatimeSanityStageProps> = ({
                   type="text"
                   value={flagNote}
                   onChange={(e) => setFlagNote(e.target.value)}
-                  placeholder="Reason for telemetry concern..."
+                  placeholder="Reason for telemetry concern (e.g. private profile, missing heartbeats)..."
                   className="text-xs px-3 py-1.5 rounded-lg border border-border bg-canvas-card text-content-primary flex-1 focus:outline-none focus:border-brand-orange"
                 />
                 <button

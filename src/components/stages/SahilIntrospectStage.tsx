@@ -35,13 +35,17 @@ export const SahilIntrospectStage: React.FC<SahilIntrospectStageProps> = ({
     .replace(/\s*\([^)]*\)/g, '')
     .trim();
 
-  // Introspect URL with submission parameters
-  const introspectParams = new URLSearchParams({
-    repo_url: project.codeUrl || '',
-    demo_url: project.playableUrl || '',
-    hours: String(project.submittedHours || 0),
-    project_name: cleanProjectName,
-  });
+  // Introspect URL with all prefilled parameters supported by introspect.sahil.ink
+  const introspectParams = new URLSearchParams();
+  if (project.codeUrl) introspectParams.set('repo_url', project.codeUrl);
+  if (project.playableUrl) introspectParams.set('demo_url', project.playableUrl);
+  if ((project as any).slackMemberId || (project as any).slackId) {
+    introspectParams.set('slack_id', (project as any).slackMemberId || (project as any).slackId);
+  }
+  if (project.hackatimeId) introspectParams.set('hackatime_user', project.hackatimeId);
+  if (project.submittedHours) introspectParams.set('hours', String(project.submittedHours));
+  if (project.submittedAt) introspectParams.set('submission_date', project.submittedAt);
+  if (cleanProjectName) introspectParams.set('hackatime_projects', cleanProjectName);
 
   const introspectUrl = `https://introspect.sahil.ink/?${introspectParams.toString()}`;
 

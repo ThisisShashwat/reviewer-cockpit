@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
-import { marked } from 'marked';
+import { Marked } from 'marked';
+import 'github-markdown-css/github-markdown-dark.css';
 import {
   ExternalLink,
   FileCode,
@@ -12,6 +13,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { CockpitProject, GitHubRepoData } from '../../lib/types';
+import { parseGitHubRepo } from '../../lib/api';
 import { PassFailControl } from '../common/PassFailControl';
 
 interface ProjectReadmeStageProps {
@@ -40,11 +42,43 @@ export const ProjectReadmeStage: React.FC<ProjectReadmeStageProps> = ({
   const renderedReadme = useMemo(() => {
     if (!readmeContent) return null;
     try {
-      return marked.parse(readmeContent) as string;
+      const parsedRepo = parseGitHubRepo(project.codeUrl);
+      const owner = parsedRepo?.owner || '';
+      const repo = parsedRepo?.repo || '';
+      const branch = gitHubData?.defaultBranch || 'main';
+      const rawBase = owner && repo ? `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/` : '';
+      const blobBase = owner && repo ? `https://github.com/${owner}/${repo}/blob/${branch}/` : '';
+
+      const renderer = {
+        image({ href, title, text }: { href: string; title?: string | null; text?: string }) {
+          let fullSrc = href;
+          if (rawBase && href && !href.startsWith('http://') && !href.startsWith('https://') && !href.startsWith('data:')) {
+            const clean = href.replace(/^\.\//, '').replace(/^\//, '');
+            fullSrc = `${rawBase}${clean}`;
+          }
+          return `<img src="${fullSrc}" alt="${text || ''}" title="${title || ''}" style="max-width: 100%; border-radius: 8px; margin: 12px 0;" loading="lazy" />`;
+        },
+        link({ href, title, text }: { href: string; title?: string | null; text: string }) {
+          let fullHref = href;
+          if (blobBase && href && !href.startsWith('http://') && !href.startsWith('https://') && !href.startsWith('#') && !href.startsWith('mailto:')) {
+            const clean = href.replace(/^\.\//, '').replace(/^\//, '');
+            fullHref = `${blobBase}${clean}`;
+          }
+          return `<a href="${fullHref}" target="_blank" rel="noreferrer" title="${title || ''}">${text}</a>`;
+        }
+      };
+
+      const customMarked = new Marked({
+        gfm: true,
+        breaks: true,
+        renderer,
+      });
+
+      return customMarked.parse(readmeContent) as string;
     } catch {
       return '<p class="text-[#71717a]">Unable to render README markdown.</p>';
     }
-  }, [readmeContent]);
+  }, [readmeContent, project.codeUrl, gitHubData?.defaultBranch]);
 
   const copyToClipboard = (text: string, field: string) => {
     navigator.clipboard.writeText(text);
@@ -227,7 +261,7 @@ export const ProjectReadmeStage: React.FC<ProjectReadmeStageProps> = ({
         <div className="flex-1 overflow-y-auto p-6 select-text">
           {renderedReadme ? (
             <div
-              className="prose prose-invert prose-sm max-w-none text-[#d4d4d8] leading-relaxed space-y-3"
+              className="markdown-body !bg-transparent !text-[#d4d4d8] leading-relaxed select-text"
               dangerouslySetInnerHTML={{ __html: renderedReadme }}
             />
           ) : (

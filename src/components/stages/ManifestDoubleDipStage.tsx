@@ -9,11 +9,17 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronUp,
+  Archive,
+  FileCode,
+  Globe,
+  Image as ImageIcon,
+  GitCommit,
 } from 'lucide-react';
 import { fetchHalceonProfile, fetchManifestLookup } from '../../lib/api';
 import {
   CockpitProject,
   HalceonProfileData,
+  HalceonShipLink,
   ManifestLookupData,
 } from '../../lib/types';
 import { PassFailControl } from '../common/PassFailControl';
@@ -28,19 +34,34 @@ interface ManifestDoubleDipStageProps {
   onToggleChecklist?: (key: string, status?: boolean) => void;
 }
 
+function decodeHtmlEntities(str: string): string {
+  if (!str) return '';
+  return str
+    .replace(/&#39;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&#x27;/g, "'")
+    .replace(/&#x2F;/g, '/')
+    .replace(/&#(\d+);/g, (_, dec) => String.fromCharCode(dec))
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
+}
+
 const ExpandableDescription: React.FC<{ text: string; maxLen?: number }> = ({
   text,
   maxLen = 140,
 }) => {
   const [expanded, setExpanded] = useState(false);
+  const clean = decodeHtmlEntities(text);
 
-  if (!text) return <span className="text-[#71717a] italic">No description provided</span>;
-  if (text.length <= maxLen) return <span className="text-[#d4d4d8] leading-relaxed">{text}</span>;
+  if (!clean) return <span className="text-[#71717a] italic">No description provided</span>;
+  if (clean.length <= maxLen) return <span className="text-[#d4d4d8] leading-relaxed">{clean}</span>;
 
   return (
     <div className="space-y-1">
       <p className="text-[#d4d4d8] leading-relaxed whitespace-pre-wrap">
-        {expanded ? text : `${text.slice(0, maxLen)}...`}
+        {expanded ? clean : `${clean.slice(0, maxLen)}...`}
       </p>
       <button
         type="button"
@@ -135,6 +156,10 @@ export const ManifestDoubleDipStage: React.FC<ManifestDoubleDipStageProps> = ({
     return repoClean && halceonRepoClean && (halceonRepoClean.includes(repoClean) || repoClean.includes(halceonRepoClean));
   });
 
+  // Find archive link for matching ship if any
+  const priorArchiveLink = matchingHalceonShip?.parsedLinks?.find((l) => l.isArchive) ||
+    (matchingHalceonShip?.links || []).find((l) => l.includes('archive.hackclub.com') || l.includes('archive.org'));
+
   // Check if similar project name exists in past ships
   const currentProjNameClean = project.projectName.toLowerCase().replace(/[^a-z0-9]/g, '');
   const similarHalceonShip = halceonShips.find((s) => {
@@ -154,12 +179,7 @@ export const ManifestDoubleDipStage: React.FC<ManifestDoubleDipStageProps> = ({
     );
   });
 
-  const priorApprovedHours = matchingHalceonShip ? matchingHalceonShip.hours : 0;
   const isDoubleDipDetected = Boolean(matchingHalceonShip);
-  const netDeltaHours = Math.max(
-    0,
-    Math.round((project.submittedHours - priorApprovedHours) * 10) / 10
-  );
 
   const handlePass = (key: string) => {
     if (onToggleChecklist) {
@@ -171,6 +191,24 @@ export const ManifestDoubleDipStage: React.FC<ManifestDoubleDipStageProps> = ({
     if (onToggleChecklist) {
       onToggleChecklist(key, false);
     }
+  };
+
+  // Helper to format ship links with 1 to 4+ items accurately
+  const getParsedLinks = (ship: typeof halceonShips[0]): HalceonShipLink[] => {
+    if (ship.parsedLinks && ship.parsedLinks.length > 0) {
+      return ship.parsedLinks;
+    }
+    // Fallback if parsedLinks was not set
+    return (ship.links || []).map((l) => {
+      const isArch = l.includes('archive.hackclub.com') || l.includes('archive.org');
+      const isRep = l.includes('github.com');
+      return {
+        label: isArch ? 'archive' : isRep ? 'repo' : `demo`,
+        url: l,
+        isArchive: isArch,
+        type: isArch ? (isRep ? 'archive_repo' : 'archive_demo') : isRep ? 'repo' : 'demo',
+      };
+    });
   };
 
   return (
@@ -198,7 +236,7 @@ export const ManifestDoubleDipStage: React.FC<ManifestDoubleDipStageProps> = ({
           )}`}
           target="_blank"
           rel="noreferrer"
-          className="px-3 py-1.5 rounded-lg bg-canvas-card border border-border-subtle text-xs font-medium text-content-secondary hover:text-content-primary hover:bg-canvas-hover flex items-center gap-1.5 transition-colors shadow-sm shrink-0"
+          className="px-3 py-1.5 rounded-lg bg-canvas-card border border-border-subtle text-xs font-medium text-content-secondary hover:text-content-primary hover:bg-canvas-hover flex items-center gap-1.5 transition-colors shadow-sm shrink-0 cursor-pointer"
         >
           <Search className="w-3.5 h-3.5" />
           <span>Halceon Web Profile</span>
@@ -213,27 +251,66 @@ export const ManifestDoubleDipStage: React.FC<ManifestDoubleDipStageProps> = ({
         </div>
       ) : (
         <>
-          {/* Automated Detection Checks Banner at Top */}
+          {/* Critical Double-Dip Alert & Archive Comparison Panel */}
           {isDoubleDipDetected && matchingHalceonShip ? (
-            <div className="p-4 rounded-xl bg-amber-950/40 border border-amber-500/40 text-amber-200 space-y-3 shadow-lg">
-              <div className="flex items-start gap-2.5">
+            <div className="p-5 rounded-2xl bg-amber-950/40 border border-amber-500/50 text-amber-200 space-y-4 shadow-lg">
+              <div className="flex items-start gap-3">
                 <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
-                <div className="text-xs flex-1">
+                <div className="text-xs flex-1 space-y-1">
                   <span className="font-bold text-sm block text-amber-300">
-                    Automated Alert: Repository Previously Shipped in {matchingHalceonShip.program} ({matchingHalceonShip.hours} hrs)
+                    CRITICAL DOUBLE-DIP AUDIT: Repository Previously Approved in {matchingHalceonShip.program} ({matchingHalceonShip.hours}h)
                   </span>
-                  <p className="mt-1 text-amber-200/90 leading-relaxed">
-                    This exact repository was already approved in {matchingHalceonShip.program} on {matchingHalceonShip.approvedAt}.
-                    Under Hack Club guidelines, double-dipping without verifiable new features is prohibited.
+                  <p className="text-amber-200/90 leading-relaxed">
+                    This exact repository was already approved on <strong>{matchingHalceonShip.approvedAt}</strong>.
+                    <strong> DO NOT simply subtract prior hours ({matchingHalceonShip.hours}h) from requested hours ({project.submittedHours}h).</strong> The prior hours may be deflated, or the submitter may have resubmitted the exact same code with no new progress.
                   </p>
                 </div>
               </div>
 
-              <div className="p-3 rounded-lg bg-[#121214] border border-[#27272a] flex items-center justify-between text-xs font-mono">
-                <span className="text-[#a1a1aa]">Calculated Net Delta Hours:</span>
-                <span className="text-sm font-bold text-amber-400">
-                  {netDeltaHours} hrs (Claimed {project.submittedHours}h - Prior {priorApprovedHours}h)
-                </span>
+              {/* Archive & Codebase Progression Comparison Box */}
+              <div className="p-4 rounded-xl bg-[#121214] border border-[#27272a] space-y-3 text-xs">
+                <div className="flex items-center justify-between font-mono">
+                  <span className="text-[#a1a1aa] flex items-center gap-2">
+                    <Archive className="w-4 h-4 text-purple-400" />
+                    <span>Prior Approved Archive Snapshot:</span>
+                  </span>
+                  {priorArchiveLink ? (
+                    <a
+                      href={typeof priorArchiveLink === 'string' ? priorArchiveLink : priorArchiveLink.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="px-3 py-1 rounded-lg bg-purple-950/60 text-purple-300 border border-purple-500/40 hover:bg-purple-900/60 transition-colors inline-flex items-center gap-1.5 font-bold"
+                    >
+                      <Archive className="w-3.5 h-3.5" />
+                      <span>Download Prior Archive Snapshot</span>
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                  ) : (
+                    <span className="text-amber-400/80 italic font-sans text-[11px]">
+                      Archive not preserved on record
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex items-center justify-between font-mono pt-2 border-t border-[#27272a]">
+                  <span className="text-[#a1a1aa] flex items-center gap-2">
+                    <GitCommit className="w-4 h-4 text-brand-orange" />
+                    <span>Current Repository Commits:</span>
+                  </span>
+                  <a
+                    href={`${project.codeUrl}/commits`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="px-3 py-1 rounded-lg bg-[#27272a] text-white hover:text-brand-orange transition-colors inline-flex items-center gap-1.5 font-bold"
+                  >
+                    <span>Inspect Commits Since {matchingHalceonShip.approvedAt}</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
+
+                <p className="text-[11px] text-[#a1a1aa] leading-relaxed pt-1">
+                  Rule: Compare the archived codebase snapshot against current code. If the code is identical or represents minor tweaks, grant <strong>0 new hours</strong>. If genuine new features were completed after {matchingHalceonShip.approvedAt}, grant only the hours corresponding to the new features.
+                </p>
               </div>
             </div>
           ) : similarHalceonShip || similarLiveSubmission ? (
@@ -265,7 +342,7 @@ export const ManifestDoubleDipStage: React.FC<ManifestDoubleDipStageProps> = ({
             </div>
           )}
 
-          {/* Section 1: Halceon Unified Ships (Card-based, zero horizontal scrolling) */}
+          {/* Section 1: Halceon Unified Ships (Card-based, displays 1 to 4+ links with full archive verification) */}
           <div className="p-5 rounded-2xl bg-[#121214] border border-[#27272a] text-white space-y-4 shadow-lg">
             <div className="flex items-center justify-between border-b border-[#27272a] pb-3">
               <h3 className="text-xs font-bold uppercase tracking-wider text-white flex items-center gap-2">
@@ -283,54 +360,98 @@ export const ManifestDoubleDipStage: React.FC<ManifestDoubleDipStageProps> = ({
               </div>
             ) : (
               <div className="space-y-3">
-                {halceonShips.map((ship, idx) => (
-                  <div
-                    key={idx}
-                    className="p-4 rounded-xl bg-[#18181b] border border-[#27272a] hover:border-[#3f3f46] transition-colors space-y-2.5"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex items-center gap-2 flex-wrap min-w-0">
-                        <span className="px-2 py-0.5 rounded text-[11px] font-mono font-bold uppercase bg-brand-orange/20 text-brand-orange border border-brand-orange/30">
-                          {ship.program}
+                {halceonShips.map((ship, idx) => {
+                  const shipLinks = getParsedLinks(ship);
+                  const hasArchive = shipLinks.some((l) => l.isArchive);
+
+                  return (
+                    <div
+                      key={idx}
+                      className="p-4 rounded-xl bg-[#18181b] border border-[#27272a] hover:border-[#3f3f46] transition-colors space-y-2.5"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-center gap-2 flex-wrap min-w-0">
+                          <span className="px-2 py-0.5 rounded text-[11px] font-mono font-bold uppercase bg-brand-orange/20 text-brand-orange border border-brand-orange/30">
+                            {decodeHtmlEntities(ship.program)}
+                          </span>
+                          <span className="font-mono font-bold text-white text-xs truncate">
+                            {decodeHtmlEntities(ship.repo)}
+                          </span>
+                          {ship.approvedAt && (
+                            <span className="text-[11px] text-[#71717a] font-mono">
+                              Approved {ship.approvedAt}
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="font-mono font-bold text-xs text-amber-400 px-2 py-0.5 rounded bg-[#27272a]">
+                            {ship.hours} hrs
+                          </span>
+                        </div>
+                      </div>
+
+                      <ExpandableDescription text={ship.description} />
+
+                      {/* Display ALL 1 to 4+ Links with Accurate Badges */}
+                      <div className="flex items-center gap-2 pt-2 border-t border-[#27272a]/60 flex-wrap">
+                        <span className="text-[10px] uppercase text-[#71717a] font-semibold">
+                          Links ({shipLinks.length}):
                         </span>
-                        <span className="font-mono font-bold text-white text-xs truncate">
-                          {ship.repo}
-                        </span>
-                        {ship.approvedAt && (
-                          <span className="text-[11px] text-[#71717a] font-mono">
-                            Approved {ship.approvedAt}
+                        {shipLinks.map((link, lIdx) => {
+                          const isArch = link.isArchive;
+                          const isRep = link.type === 'repo' || link.type === 'archive_repo';
+                          const isDem = link.type === 'demo' || link.type === 'archive_demo';
+                          const isImg = link.type === 'image';
+
+                          return (
+                            <a
+                              key={lIdx}
+                              href={link.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className={`px-2.5 py-1 rounded-md text-[11px] font-mono transition-colors inline-flex items-center gap-1.5 ${
+                                isArch
+                                  ? 'bg-purple-950/60 text-purple-300 border border-purple-500/40 hover:bg-purple-900/60'
+                                  : isRep
+                                  ? 'bg-blue-950/60 text-blue-300 border border-blue-500/40 hover:bg-blue-900/60'
+                                  : isDem
+                                  ? 'bg-emerald-950/60 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-900/60'
+                                  : isImg
+                                  ? 'bg-zinc-800 text-zinc-300 border border-zinc-700 hover:text-white'
+                                  : 'bg-[#27272a] text-[#d4d4d8] hover:text-white'
+                              }`}
+                            >
+                              {isArch ? (
+                                <Archive className="w-3 h-3 text-purple-400" />
+                              ) : isRep ? (
+                                <FileCode className="w-3 h-3 text-blue-400" />
+                              ) : isDem ? (
+                                <Globe className="w-3 h-3 text-emerald-400" />
+                              ) : isImg ? (
+                                <ImageIcon className="w-3 h-3 text-zinc-400" />
+                              ) : (
+                                <ExternalLink className="w-3 h-3" />
+                              )}
+                              <span>{decodeHtmlEntities(link.label || (isArch ? 'Archive' : link.type))}</span>
+                              <ExternalLink className="w-2.5 h-2.5 opacity-60" />
+                            </a>
+                          );
+                        })}
+
+                        {hasArchive ? (
+                          <span className="text-[10px] text-emerald-400 font-mono flex items-center gap-1 ml-auto">
+                            <CheckCircle2 className="w-3 h-3" /> Archive Preserved
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-amber-400/80 font-mono flex items-center gap-1 ml-auto">
+                            <AlertTriangle className="w-3 h-3" /> Archive Missing
                           </span>
                         )}
                       </div>
-
-                      <div className="flex items-center gap-2 shrink-0">
-                        <span className="font-mono font-bold text-xs text-amber-400 px-2 py-0.5 rounded bg-[#27272a]">
-                          {ship.hours} hrs
-                        </span>
-                      </div>
                     </div>
-
-                    <ExpandableDescription text={ship.description} />
-
-                    {ship.links && ship.links.length > 0 && (
-                      <div className="flex items-center gap-2 pt-1 border-t border-[#27272a]/60">
-                        <span className="text-[10px] uppercase text-[#71717a] font-semibold">Links:</span>
-                        {ship.links.map((link, lIdx) => (
-                          <a
-                            key={lIdx}
-                            href={link}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="px-2 py-0.5 rounded text-[11px] font-mono bg-[#27272a] text-[#d4d4d8] hover:text-brand-orange hover:bg-[#333338] transition-colors inline-flex items-center gap-1"
-                          >
-                            <span>{link.includes('github.com') ? 'Repo' : 'Demo'}</span>
-                            <ExternalLink className="w-2.5 h-2.5" />
-                          </a>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -361,7 +482,7 @@ export const ManifestDoubleDipStage: React.FC<ManifestDoubleDipStageProps> = ({
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex items-center gap-2 flex-wrap min-w-0">
                         <span className="font-bold text-white text-xs">
-                          {past.projectName}
+                          {decodeHtmlEntities(past.projectName)}
                         </span>
                         <span className="px-2 py-0.2 rounded text-[10px] font-mono uppercase bg-[#27272a] text-[#a1a1aa]">
                           {past.projectType}
@@ -433,8 +554,8 @@ export const ManifestDoubleDipStage: React.FC<ManifestDoubleDipStageProps> = ({
 
             <div className="space-y-2.5">
               <PassFailControl
-                label="Halceon Cross-YSWS Ships Inspected"
-                description={`Verified complete track record (${halceonTotalShips} prior ships in Stardance, Arcade, High Seas, Blot).`}
+                label="Halceon Cross-YSWS Ships & Archives Inspected"
+                description={`Verified complete track record (${halceonTotalShips} prior ships in Stardance, Arcade, High Seas, Blot) and checked archive presence.`}
                 status={reviewChecklist['stage1_halceon_reviewed']}
                 onPass={() => handlePass('stage1_halceon_reviewed')}
                 onFail={() => handleFail('stage1_halceon_reviewed')}
@@ -449,8 +570,8 @@ export const ManifestDoubleDipStage: React.FC<ManifestDoubleDipStageProps> = ({
               />
 
               <PassFailControl
-                label="No Uncredited Double-Dipping / Delta Hours Verified"
-                description="Repository is confirmed original or requested hours reflect strictly new, incremental features."
+                label="Archive vs Code Progression Verified (No Unchanged Resubmissions)"
+                description="Verified genuine new progress and features were created beyond previous archived snapshot (no naive hours subtraction)."
                 status={reviewChecklist['stage1_double_dip_checked']}
                 onPass={() => handlePass('stage1_double_dip_checked')}
                 onFail={() => handleFail('stage1_double_dip_checked')}
