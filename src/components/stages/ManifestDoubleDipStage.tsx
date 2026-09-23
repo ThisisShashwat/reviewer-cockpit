@@ -22,12 +22,14 @@ import {
   HalceonShipLink,
   ManifestLookupData,
   ArchiveCommitInfo,
+  GitHubRepoData,
 } from '../../lib/types';
 import { PassFailControl } from '../common/PassFailControl';
 
 interface ManifestDoubleDipStageProps {
   project: CockpitProject;
   allProjects?: CockpitProject[];
+  gitHubData?: Partial<GitHubRepoData>;
   onAdvance: () => void;
   onEarlyExit?: (reason: string) => void;
   onApplyDeltaHours?: (hours: number, justification: string) => void;
@@ -94,6 +96,7 @@ const ExpandableDescription: React.FC<{ text: string; maxLen?: number }> = ({
 export const ManifestDoubleDipStage: React.FC<ManifestDoubleDipStageProps> = ({
   project,
   allProjects = [],
+  gitHubData,
   onAdvance,
   onEarlyExit,
   onApplyDeltaHours: _onApplyDeltaHours,
@@ -264,7 +267,7 @@ export const ManifestDoubleDipStage: React.FC<ManifestDoubleDipStageProps> = ({
         <div>
           <div className="flex items-center gap-2">
             <span className="text-xs font-mono font-bold uppercase tracking-wider text-brand-orange bg-brand-orange/10 px-2 py-0.5 rounded border border-brand-orange/20">
-              Stage 2 of 7
+              Stage 1 of 5
             </span>
             <span className="text-xs text-content-tertiary">Cross-Program Audit</span>
           </div>
@@ -378,8 +381,42 @@ export const ManifestDoubleDipStage: React.FC<ManifestDoubleDipStageProps> = ({
                     </div>
 
                     <div className="p-2 rounded bg-purple-950/30 border border-purple-500/20 text-[11px] text-purple-200/90 leading-relaxed">
-                      💡 <strong>Audit Baseline Established:</strong> Commits up to <code className="text-white font-mono">{archiveCommitData.shortHash}</code> were approved in prior ship &ldquo;{matchingHalceonShip.repo}&rdquo; ({matchingHalceonShip.hours}h). In Stage 6 (Commits & AI), any commits up to this hash will be tagged as historical, and only subsequent commits will count as eligible new engineering progress.
+                      💡 <strong>Audit Baseline Established:</strong> Commits up to <code className="text-white font-mono">{archiveCommitData.shortHash}</code> were approved in prior ship &ldquo;{matchingHalceonShip.repo}&rdquo; ({matchingHalceonShip.hours}h). In Stage 4 (Commits & AI), any commits up to this hash will be tagged as historical, and only subsequent commits will count as eligible new engineering progress.
                     </div>
+
+                    {/* Zero Progress Blocker Alert if Archive Baseline === HEAD */}
+                    {Boolean(
+                      archiveCommitData.commitHash &&
+                        gitHubData?.commits?.[0]?.sha &&
+                        (archiveCommitData.commitHash
+                          .toLowerCase()
+                          .startsWith(gitHubData.commits[0].sha.toLowerCase().slice(0, 7)) ||
+                          gitHubData.commits[0].sha
+                            .toLowerCase()
+                            .startsWith(archiveCommitData.commitHash.toLowerCase().slice(0, 7)))
+                    ) && (
+                      <div className="p-3 rounded-lg bg-rose-900/80 border border-rose-400 text-white text-xs font-semibold flex items-center justify-between gap-3 shadow-lg">
+                        <div className="flex items-center gap-2">
+                          <AlertTriangle className="w-5 h-5 text-rose-300 shrink-0" />
+                          <span>
+                            🚨 Identical to Repo HEAD: Prior approved archive commit ({archiveCommitData.shortHash}) matches the repository HEAD! Zero new commits have been pushed since prior ship &ldquo;{matchingHalceonShip.repo}&rdquo;.
+                          </span>
+                        </div>
+                        {onEarlyExit && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              onEarlyExit(
+                                `Zero Progress Double-Dip: Repository HEAD is identical to previously approved archive commit (${archiveCommitData.shortHash}) from "${matchingHalceonShip.repo}"`
+                              )
+                            }
+                            className="px-3 py-1 rounded bg-rose-950 hover:bg-black text-white text-xs font-bold border border-rose-400 shrink-0 shadow-sm"
+                          >
+                            Reject for Zero Progress
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
                 ) : null}
 
@@ -717,7 +754,7 @@ export const ManifestDoubleDipStage: React.FC<ManifestDoubleDipStageProps> = ({
               onClick={onAdvance}
               className="px-5 py-2 rounded-lg bg-brand-orange text-white hover:bg-orange-600 text-xs font-semibold transition-colors shadow-sm flex items-center gap-1.5 cursor-pointer"
             >
-              <span>Continue to Sahil&apos;s Introspect →</span>
+              <span>Next: Readme & Deliverables →</span>
             </button>
           </div>
         </>

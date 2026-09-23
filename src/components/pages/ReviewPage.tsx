@@ -6,7 +6,6 @@ import {
   Activity,
   Layers,
   FileText,
-  PlaySquare,
   GitCommit,
   ShieldCheck,
   Lock,
@@ -21,24 +20,20 @@ import {
 } from '../../lib/types';
 
 import { ReviewSidebar } from '../layout/ReviewSidebar';
-import { HackatimeSanityStage } from '../stages/HackatimeSanityStage';
 import { ManifestDoubleDipStage } from '../stages/ManifestDoubleDipStage';
-import { SahilIntrospectStage } from '../stages/SahilIntrospectStage';
-import { ProjectReadmeStage } from '../stages/ProjectReadmeStage';
-import { ShippingDeliverablesStage } from '../stages/ShippingDeliverablesStage';
+import { ReadmeDeliverablesStage } from '../stages/ReadmeDeliverablesStage';
+import { TelemetryIntrospectStage } from '../stages/TelemetryIntrospectStage';
 import { CommitsDiffsStage } from '../stages/CommitsDiffsStage';
 import { VerdictDeskStage } from '../stages/VerdictDeskStage';
 
-export type ReviewStep = 0 | 1 | 2 | 3 | 4 | 5 | 6;
+export type ReviewStep = 0 | 1 | 2 | 3 | 4;
 
 const STEPS = [
-  { id: 0 as ReviewStep, label: '1. Hackatime', title: 'Project Telemetry', icon: Activity },
-  { id: 1 as ReviewStep, label: '2. History', title: 'Live & Halceon Submissions', icon: Layers },
-  { id: 2 as ReviewStep, label: '3. README', title: 'URLs & README Verification', icon: FileText },
-  { id: 3 as ReviewStep, label: '4. Demo', title: 'Playable Deliverable Testing', icon: PlaySquare },
-  { id: 4 as ReviewStep, label: '5. Introspect', title: "Sahil's Introspect", icon: Layers },
-  { id: 5 as ReviewStep, label: '6. Commits & AI', title: 'Git History & AI Heuristics', icon: GitCommit },
-  { id: 6 as ReviewStep, label: '7. Verdict', title: 'Final Verdict Desk', icon: ShieldCheck },
+  { id: 0 as ReviewStep, label: '1. History', title: 'Prior Ships & Double-Dip', icon: Layers },
+  { id: 1 as ReviewStep, label: '2. Readme & Deliverables', title: 'Shipped Checks & README', icon: FileText },
+  { id: 2 as ReviewStep, label: '3. Telemetry & Introspect', title: 'Telemetry & Coding Timeline', icon: Activity },
+  { id: 3 as ReviewStep, label: '4. Commits & AI', title: 'Git History, Churn & AI Forensics', icon: GitCommit },
+  { id: 4 as ReviewStep, label: '5. Verdict', title: 'Final Verdict Desk', icon: ShieldCheck },
 ];
 
 interface ReviewPageProps {
@@ -131,7 +126,7 @@ export const ReviewPage: React.FC<ReviewPageProps> = ({
         onPrevProject();
       } else {
         const num = parseInt(e.key, 10);
-        if (num >= 1 && num <= 7) {
+        if (num >= 1 && num <= 5) {
           handleStepSelect((num - 1) as ReviewStep);
         }
       }
@@ -142,7 +137,7 @@ export const ReviewPage: React.FC<ReviewPageProps> = ({
   }, [onBackToQueue, onNextProject, onPrevProject]);
 
   const handleAdvance = () => {
-    if (currentStep < 6) {
+    if (currentStep < 4) {
       const next = (currentStep + 1) as ReviewStep;
       handleStepSelect(next);
     }
@@ -150,7 +145,7 @@ export const ReviewPage: React.FC<ReviewPageProps> = ({
 
   const handleEarlyExit = (reason: string) => {
     toast.info(`Flag noted: ${reason}. Advanced to Final Verdict Desk.`);
-    handleStepSelect(6);
+    handleStepSelect(4);
   };
 
   return (
@@ -262,19 +257,10 @@ export const ReviewPage: React.FC<ReviewPageProps> = ({
         {/* Right Stage Workspace */}
         <main className="flex-1 overflow-hidden bg-canvas relative flex flex-col">
           {currentStep === 0 && (
-            <HackatimeSanityStage
-              project={project}
-              onAdvance={handleAdvance}
-              onEarlyExit={handleEarlyExit}
-              reviewChecklist={reviewChecklist}
-              onToggleChecklist={toggleChecklist}
-            />
-          )}
-
-          {currentStep === 1 && (
             <ManifestDoubleDipStage
               project={project}
               allProjects={allProjects}
+              gitHubData={gitHubData}
               onAdvance={handleAdvance}
               onEarlyExit={handleEarlyExit}
               reviewChecklist={reviewChecklist}
@@ -283,10 +269,20 @@ export const ReviewPage: React.FC<ReviewPageProps> = ({
             />
           )}
 
-          {currentStep === 2 && (
-            <ProjectReadmeStage
+          {currentStep === 1 && (
+            <ReadmeDeliverablesStage
               project={project}
               gitHubData={gitHubData}
+              onAdvance={handleAdvance}
+              onEarlyExit={handleEarlyExit}
+              reviewChecklist={reviewChecklist}
+              onToggleChecklist={toggleChecklist}
+            />
+          )}
+
+          {currentStep === 2 && (
+            <TelemetryIntrospectStage
+              project={project}
               onAdvance={handleAdvance}
               onEarlyExit={handleEarlyExit}
               reviewChecklist={reviewChecklist}
@@ -295,27 +291,6 @@ export const ReviewPage: React.FC<ReviewPageProps> = ({
           )}
 
           {currentStep === 3 && (
-            <ShippingDeliverablesStage
-              project={project}
-              gitHubData={gitHubData}
-              onAdvance={handleAdvance}
-              onEarlyExit={handleEarlyExit}
-              reviewChecklist={reviewChecklist}
-              onToggleChecklist={toggleChecklist}
-            />
-          )}
-
-          {currentStep === 4 && (
-            <SahilIntrospectStage
-              project={project}
-              onAdvance={handleAdvance}
-              onEarlyExit={handleEarlyExit}
-              reviewChecklist={reviewChecklist}
-              onToggleChecklist={toggleChecklist}
-            />
-          )}
-
-          {currentStep === 5 && (
             <CommitsDiffsStage
               project={project}
               gitHubData={gitHubData}
@@ -327,7 +302,7 @@ export const ReviewPage: React.FC<ReviewPageProps> = ({
             />
           )}
 
-          {currentStep === 6 && (
+          {currentStep === 4 && (
             <VerdictDeskStage
               project={project}
               verdict={verdict}

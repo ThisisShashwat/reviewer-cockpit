@@ -4,9 +4,10 @@ import {
   Bot,
   ExternalLink,
   FileCode,
+  Flame,
   GitCommit,
-  Clock,
-  FileText,
+  Trash2,
+  X,
 } from 'lucide-react';
 import { CockpitProject, GitHubRepoData } from '../../lib/types';
 import { PassFailControl } from '../common/PassFailControl';
@@ -26,7 +27,7 @@ interface CommitsDiffsStageProps {
   onToggleChecklist?: (key: string, status?: boolean) => void;
 }
 
-type CommitCategory = 'core' | 'cosmetic' | 'huge_dump';
+type CommitCategory = 'core' | 'cosmetic' | 'huge_dump' | 'boilerplate';
 
 interface ClassifiedCommit {
   sha: string;
@@ -37,8 +38,12 @@ interface ClassifiedCommit {
   htmlUrl: string;
   additions: number;
   deletions: number;
+  codeAdditions: number;
+  codeDeletions: number;
   files: Array<{ filename: string; additions: number; deletions: number; status: string }>;
   category: CommitCategory;
+  isDump: boolean;
+  dumpPercent: number;
 }
 
 export const CommitsDiffsStage: React.FC<CommitsDiffsStageProps> = ({
@@ -51,27 +56,72 @@ export const CommitsDiffsStage: React.FC<CommitsDiffsStageProps> = ({
   onToggleChecklist,
 }) => {
   const [selectedCommitSha, setSelectedCommitSha] = useState<string | null>(null);
-  const [flagNote, setFlagNote] = useState('');
-  const [isFlagging, setIsFlagging] = useState(false);
+  const [selectedFileFilter, setSelectedFileFilter] = useState<string | null>(null);
+  const [viewScope, setViewScope] = useState<'current_ship' | 'full_repo'>(
+    baselineArchiveCommit ? 'current_ship' : 'full_repo'
+  );
 
   const rawCommits = gitHubData?.commits || [];
   const repoFiles = gitHubData?.files || [];
   const isRateLimited = Boolean(gitHubData?.isRateLimited);
 
-  // Classify each commit
+  // Baseline Archive Commit index in current commit history
+  const baselineIndex = useMemo(() => {
+    if (!baselineArchiveCommit) return -1;
+    return rawCommits.findIndex(
+      (c) =>
+        c.sha.toLowerCase().startsWith(baselineArchiveCommit.shortHash.toLowerCase()) ||
+        baselineArchiveCommit.commitHash.toLowerCase().startsWith(c.sha.toLowerCase())
+    );
+  }, [rawCommits, baselineArchiveCommit]);
+
+  const isHeadIdenticalToBaseline = baselineIndex === 0;
+
+  // Classify each commit & compute pure code additions (excluding lockfiles & assets)
   const classifiedCommits: ClassifiedCommit[] = useMemo(() => {
     const codeExts = [
       '.ts', '.tsx', '.js', '.jsx', '.py', '.rs', '.go', '.c', '.cpp', '.h',
       '.html', '.css', '.scss', '.sql', '.sh', '.kicad_pcb', '.kicad_sch',
-      '.sch', '.brd', '.step', '.cad', '.java', '.kt', '.swift',
+      '.sch', '.brd', '.step', '.cad', '.java', '.kt', '.swift', '.php',
+      '.rb', '.lua', '.dart', '.vue', '.svelte',
     ];
+
+    const lockAndAssetExts = [
+      '.lock', '-lock.json', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico',
+      '.webp', '.mp3', '.mp4', '.wav', '.pdf', '.woff', '.woff2', '.ttf',
+    ];
+
+    // First pass: calculate total code additions across all commits
+    let totalCodeAdded = 0;
+    rawCommits.forEach((c) => {
+      (c.files || []).forEach((f) => {
+        const lower = f.filename.toLowerCase();
+        const isCode = codeExts.some((ext) => lower.endsWith(ext));
+        const isLockOrAsset = lockAndAssetExts.some((ext) => lower.includes(ext));
+        if (isCode && !isLockOrAsset) {
+          totalCodeAdded += f.additions || 0;
+        }
+      });
+    });
 
     return rawCommits.map((c) => {
       const additions = c.additions || 0;
+      const deletions = c.deletions || 0;
       const files = c.files || [];
-      const hasCodeFiles = files.some((f) =>
-        codeExts.some((ext) => f.filename.toLowerCase().endsWith(ext))
-      );
+
+      let commitCodeAdditions = 0;
+      let commitCodeDeletions = 0;
+
+      files.forEach((f) => {
+        const lower = f.filename.toLowerCase();
+        const isCode = codeExts.some((ext) => lower.endsWith(ext));
+        const isLockOrAsset = lockAndAssetExts.some((ext) => lower.includes(ext));
+        if (isCode && !isLockOrAsset) {
+          commitCodeAdditions += f.additions || 0;
+          commitCodeDeletions += f.deletions || 0;
+        }
+      });
+
       const onlyDocOrAssetFiles =
         files.length > 0 &&
         files.every((f) => {
@@ -80,81 +130,117 @@ export const CommitsDiffsStage: React.FC<CommitsDiffsStageProps> = ({
             lower.endsWith('.md') ||
             lower.endsWith('.txt') ||
             lower.includes('license') ||
-            lower.endsWith('.png') ||
-            lower.endsWith('.jpg') ||
-            lower.endsWith('.jpeg') ||
-            lower.endsWith('.svg') ||
-            lower.endsWith('.ico') ||
-            lower.endsWith('.webp') ||
-            lower.endsWith('.gif') ||
+            lockAndAssetExts.some((ext) => lower.includes(ext)) ||
             lower === '.gitignore'
           );
         });
 
+      // Calculate code dump percentage
+      const dumpPercent =
+        totalCodeAdded > 0 ? Math.round((commitCodeAdditions / totalCodeAdded) * 100) : 0;
+      const isDump = dumpPercent >= 60 && commitCodeAdditions > 300;
+
       let category: CommitCategory = 'core';
-      if (additions >= 1000 || files.length >= 25) {
-        category = 'huge_dump';
-      } else if (onlyDocOrAssetFiles || (!hasCodeFiles && files.length > 0)) {
+      if (onlyDocOrAssetFiles) {
         category = 'cosmetic';
+      } else if (additions >= 1000 && commitCodeAdditions < 200) {
+        // Massive changes but mostly lockfile/config
+        category = 'boilerplate';
+      } else if (isDump || additions >= 1200) {
+        category = 'huge_dump';
       }
 
       return {
         ...c,
         additions,
-        deletions: c.deletions || 0,
+        deletions,
+        codeAdditions: commitCodeAdditions,
+        codeDeletions: commitCodeDeletions,
         files,
         category,
+        isDump,
+        dumpPercent,
       };
     });
   }, [rawCommits]);
 
+  // Filtered commits based on scope toggle (Current Ship vs Full Repo) and file filter
+  const visibleCommits = useMemo(() => {
+    let list = classifiedCommits;
+
+    // Scope filter: if baseline is present and scope is current_ship, show only commits after baseline
+    if (viewScope === 'current_ship' && baselineIndex !== -1) {
+      list = list.slice(0, baselineIndex);
+    }
+
+    // File filter: if a specific file is selected from churn table, show only commits modifying that file
+    if (selectedFileFilter) {
+      list = list.filter((c) =>
+        (c.files || []).some((f) => f.filename === selectedFileFilter)
+      );
+    }
+
+    return list;
+  }, [classifiedCommits, viewScope, baselineIndex, selectedFileFilter]);
+
+  // Selected commit
+  const selectedCommit =
+    visibleCommits.find((c) => c.sha === selectedCommitSha) || visibleCommits[0] || null;
+
   const totalAdditions = classifiedCommits.reduce((acc, c) => acc + c.additions, 0);
   const totalDeletions = classifiedCommits.reduce((acc, c) => acc + c.deletions, 0);
 
-  const coreCommits = classifiedCommits.filter((c) => c.category === 'core');
-  const cosmeticCommits = classifiedCommits.filter((c) => c.category === 'cosmetic');
-  const hugeDumpCommits = classifiedCommits.filter((c) => c.category === 'huge_dump');
+  // Deleted Files & Purged Traces Scanner
+  const purgedFiles = useMemo(() => {
+    const deleted: Array<{
+      filename: string;
+      commitSha: string;
+      commitMessage: string;
+      date: string;
+      deletions: number;
+      isAiTrace: boolean;
+      isBoilerplateTrace: boolean;
+    }> = [];
 
-  const coreAdditions = coreCommits.reduce((acc, c) => acc + c.additions, 0);
-  const corePercent = totalAdditions > 0 ? Math.round((coreAdditions / totalAdditions) * 100) : 0;
+    const aiSignatures = [
+      '.cursorrules',
+      '.cursor/',
+      '.claude',
+      'prompts',
+      '.prompt',
+      'rules.md',
+      '.windsurf',
+      '.v0',
+      'copilot-instructions',
+      'aider',
+    ];
 
-  // Selected commit for changed files inspector
-  const selectedCommit =
-    classifiedCommits.find((c) => c.sha === selectedCommitSha) || classifiedCommits[0];
+    const boilerplateSignatures = ['starter', 'boilerplate', 'template', 'tutorial', 'sample'];
 
-  // Development Duration Calculation
-  const timelineDuration = useMemo(() => {
-    if (classifiedCommits.length < 2) return null;
-    const timestamps = classifiedCommits
-      .map((c) => (c.date ? new Date(c.date).getTime() : 0))
-      .filter((t) => t > 0);
-    if (timestamps.length < 2) return null;
-    const minTime = Math.min(...timestamps);
-    const maxTime = Math.max(...timestamps);
-    const diffHours = (maxTime - minTime) / (1000 * 60 * 60);
+    classifiedCommits.forEach((c) => {
+      (c.files || []).forEach((f) => {
+        if (f.status === 'removed') {
+          const lower = f.filename.toLowerCase();
+          const isAiTrace = aiSignatures.some((sig) => lower.includes(sig));
+          const isBoilerplateTrace = boilerplateSignatures.some((sig) => lower.includes(sig));
 
-    if (diffHours < 1) {
-      const mins = Math.max(1, Math.round(diffHours * 60));
-      return { text: `${mins} minutes`, isSpike: mins <= 30 && totalAdditions > 1500 };
-    }
-    if (diffHours < 24) {
-      return { text: `${diffHours.toFixed(1)} hours`, isSpike: false };
-    }
-    const days = Math.round(diffHours / 24);
-    return { text: `${days} day${days > 1 ? 's' : ''}`, isSpike: false };
-  }, [classifiedCommits, totalAdditions]);
+          deleted.push({
+            filename: f.filename,
+            commitSha: c.shortSha,
+            commitMessage: c.message,
+            date: c.date,
+            deletions: f.deletions,
+            isAiTrace,
+            isBoilerplateTrace,
+          });
+        }
+      });
+    });
 
-  // Baseline Archive Commit index in current commit history
-  const baselineIndex = useMemo(() => {
-    if (!baselineArchiveCommit) return -1;
-    return classifiedCommits.findIndex(
-      (c) =>
-        c.sha.toLowerCase().startsWith(baselineArchiveCommit.shortHash.toLowerCase()) ||
-        baselineArchiveCommit.commitHash.toLowerCase().startsWith(c.sha.toLowerCase())
-    );
-  }, [classifiedCommits, baselineArchiveCommit]);
+    return deleted;
+  }, [classifiedCommits]);
 
-  // File-wise aggregate metrics derived from commits
+  // File-Wise Aggregate Metrics Table
   const fileWiseMetrics = useMemo(() => {
     const map = new Map<
       string,
@@ -164,6 +250,14 @@ export const CommitsDiffsStage: React.FC<CommitsDiffsStageProps> = ({
         deletions: number;
         changes: number;
         commitCount: number;
+        commitsTouching: Array<{
+          sha: string;
+          shortSha: string;
+          message: string;
+          date: string;
+          additions: number;
+          deletions: number;
+        }>;
         category: 'Code' | 'Markup' | 'Config' | 'Asset';
       }
     >();
@@ -177,6 +271,7 @@ export const CommitsDiffsStage: React.FC<CommitsDiffsStageProps> = ({
           deletions: 0,
           changes: 0,
           commitCount: 0,
+          commitsTouching: [],
           category: 'Code' as const,
         };
 
@@ -184,6 +279,14 @@ export const CommitsDiffsStage: React.FC<CommitsDiffsStageProps> = ({
         existing.deletions += f.deletions || 0;
         existing.changes += (f.additions || 0) + (f.deletions || 0);
         existing.commitCount += 1;
+        existing.commitsTouching.push({
+          sha: c.sha,
+          shortSha: c.shortSha,
+          message: c.message,
+          date: c.date,
+          additions: f.additions || 0,
+          deletions: f.deletions || 0,
+        });
 
         const lower = f.filename.toLowerCase();
         if (lower.endsWith('.md') || lower.endsWith('.txt') || lower.endsWith('.rst')) {
@@ -203,10 +306,7 @@ export const CommitsDiffsStage: React.FC<CommitsDiffsStageProps> = ({
           lower.endsWith('.jpeg') ||
           lower.endsWith('.gif') ||
           lower.endsWith('.svg') ||
-          lower.endsWith('.ico') ||
-          lower.endsWith('.mp3') ||
-          lower.endsWith('.mp4') ||
-          lower.endsWith('.wav')
+          lower.endsWith('.ico')
         ) {
           existing.category = 'Asset';
         } else {
@@ -220,59 +320,49 @@ export const CommitsDiffsStage: React.FC<CommitsDiffsStageProps> = ({
     return Array.from(map.values()).sort((a, b) => b.changes - a.changes);
   }, [classifiedCommits]);
 
-  // Overall AI Signal Evaluation across the entire repo
+  // Selected file details for file iteration timeline
+  const selectedFileMetric = useMemo(() => {
+    if (!selectedFileFilter) return null;
+    return fileWiseMetrics.find((m) => m.filename === selectedFileFilter) || null;
+  }, [fileWiseMetrics, selectedFileFilter]);
+
+  // Overall AI Evaluation Risk Heuristics
   const overallAiEvaluation = useMemo(() => {
     const aiKeywords = ['.cursorrules', '.claude', 'copilot', 'devin', 'prompts', '.v0'];
     const detectedAiFiles = repoFiles.filter((f) =>
       aiKeywords.some((kw) => f.name.toLowerCase().includes(kw))
     );
 
-    const genericPatterns = [
-      'initial commit',
-      'create complete',
-      'added all',
-      'feat: complete project',
-      'full architecture',
-      'implemented application',
-      'finish project',
-    ];
-    const genericMessageCommits = classifiedCommits.filter((c) =>
-      genericPatterns.some((pattern) => c.message.toLowerCase().includes(pattern))
-    );
-
-    const isSingleCommitConcentrated =
-      classifiedCommits.length === 1 ||
-      (classifiedCommits.length > 0 &&
-        totalAdditions > 2000 &&
-        classifiedCommits[0].additions / totalAdditions >= 0.85);
+    const dumpCommits = classifiedCommits.filter((c) => c.isDump);
 
     let riskScore = 0;
     const riskReasons: string[] = [];
 
     if (detectedAiFiles.length > 0) {
       riskScore += 2;
-      riskReasons.push(`AI configuration files present in repository (${detectedAiFiles.map((f) => f.name).join(', ')})`);
+      riskReasons.push(
+        `AI configuration files discovered in repository (${detectedAiFiles.map((f) => f.name).join(', ')})`
+      );
     }
 
-    if (genericMessageCommits.length >= 2) {
+    if (purgedFiles.some((p) => p.isAiTrace)) {
       riskScore += 2;
-      riskReasons.push(`${genericMessageCommits.length} commits use generic AI boilerplate messages (e.g. "feat: complete project")`);
+      riskReasons.push(
+        `AI prompt / config traces were purged in commit history (${purgedFiles.filter((p) => p.isAiTrace).map((p) => p.filename).join(', ')})`
+      );
     }
 
-    if (isSingleCommitConcentrated) {
+    if (dumpCommits.length > 0) {
       riskScore += 2;
-      riskReasons.push(`Over 85% of repository code (+${classifiedCommits[0]?.additions.toLocaleString()} lines) was dropped in a single commit`);
-    }
-
-    if (timelineDuration?.isSpike) {
-      riskScore += 2;
-      riskReasons.push(`Entire commit history spans only ${timelineDuration.text} despite claiming ${project.submittedHours} hours`);
+      riskReasons.push(
+        `Massive code dump: Commit ${dumpCommits[0].shortSha} introduced ${dumpCommits[0].dumpPercent}% of total codebase`
+      );
     }
 
     if (riskScore >= 4) {
       return {
         level: 'high' as const,
-        badge: 'High AI / One-Shot Dump Risk',
+        badge: 'High AI / Mass Dump Probability',
         color: 'rose',
         reasons: riskReasons,
       };
@@ -289,58 +379,64 @@ export const CommitsDiffsStage: React.FC<CommitsDiffsStageProps> = ({
       level: 'low' as const,
       badge: 'Organic Human Engineering Patterns',
       color: 'emerald',
-      reasons: ['Commits demonstrate gradual iterative development, diverse commit messages, and natural file progression.'],
+      reasons: [
+        'Commits demonstrate natural incremental problem solving, diverse messages, and progressive file iteration.',
+      ],
     };
-  }, [repoFiles, classifiedCommits, totalAdditions, timelineDuration, project.submittedHours]);
+  }, [repoFiles, classifiedCommits, purgedFiles]);
 
   const handlePass = (key: string) => {
-    if (onToggleChecklist) {
-      onToggleChecklist(key, true);
-    }
+    onToggleChecklist?.(key, true);
   };
 
   const handleFail = (key: string) => {
-    if (onToggleChecklist) {
-      onToggleChecklist(key, false);
-    }
+    onToggleChecklist?.(key, false);
   };
 
   return (
-    <div className="h-full overflow-y-auto p-8 space-y-6 max-w-5xl mx-auto flex flex-col">
+    <div className="h-full overflow-y-auto p-8 space-y-6 max-w-6xl mx-auto flex flex-col">
       {/* Stage Header */}
       <div className="flex items-start justify-between pb-5 border-b border-border-subtle shrink-0">
         <div>
           <div className="flex items-center gap-2">
             <span className="text-xs font-mono font-bold uppercase tracking-wider text-brand-orange bg-brand-orange/10 px-2 py-0.5 rounded border border-brand-orange/20">
-              Stage 6 of 7
+              Stage 4 of 5
             </span>
-            <span className="text-xs text-content-tertiary">Code History & Integrity Audit</span>
+            <span className="text-xs text-content-tertiary">Git History & Integrity Audit</span>
           </div>
           <h2 className="text-lg font-bold text-content-primary mt-1 font-heading">
-            Git Commits Progression, File-Wise Metrics & AI Evaluation
+            Git Commits Progression, File-Wise Metrics & AI Forensics
           </h2>
           <p className="text-xs text-content-tertiary mt-1 max-w-2xl">
-            Confirm authentic incremental development progression across commits, inspect changed files, and evaluate repository AI generation signals.
+            Confirm authentic incremental development progression across commits, inspect changed files, trace purged AI configs, and evaluate code churn per file.
           </p>
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
-          <a
-            href={`${project.codeUrl}/commits`}
-            target="_blank"
-            rel="noreferrer"
-            className="px-3 py-1.5 rounded-lg bg-canvas-card border border-border-subtle text-xs font-medium text-content-secondary hover:text-content-primary hover:bg-canvas-hover flex items-center gap-1.5 transition-colors shadow-sm cursor-pointer"
-          >
-            <span>GitHub Commits</span>
-            <ExternalLink className="w-3.5 h-3.5" />
-          </a>
+          {project.codeUrl && (
+            <a
+              href={`${project.codeUrl}/commits`}
+              target="_blank"
+              rel="noreferrer"
+              className="px-3 py-1.5 rounded-lg bg-canvas-card border border-border-subtle text-xs font-medium text-content-secondary hover:text-content-primary hover:bg-canvas-hover flex items-center gap-1.5 transition-colors shadow-sm cursor-pointer"
+            >
+              <span>GitHub Commits</span>
+              <ExternalLink className="w-3.5 h-3.5" />
+            </a>
+          )}
         </div>
       </div>
 
       {/* Prior Approved Archive Baseline Flag Banner */}
       {baselineArchiveCommit && (
-        <div className="p-4 rounded-xl bg-purple-950/40 border border-purple-500/50 text-white space-y-2.5 shadow-xl shrink-0">
-          <div className="flex items-start justify-between gap-4">
+        <div
+          className={`p-4 rounded-xl text-white space-y-3 shadow-xl shrink-0 border ${
+            isHeadIdenticalToBaseline
+              ? 'bg-rose-950/60 border-rose-500/80'
+              : 'bg-purple-950/40 border-purple-500/50'
+          }`}
+        >
+          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
             <div className="space-y-1">
               <span className="text-xs font-mono font-bold uppercase tracking-wider text-purple-300 bg-purple-500/20 px-2 py-0.5 rounded border border-purple-500/30 inline-flex items-center gap-1.5">
                 <GitCommit className="w-3.5 h-3.5 text-purple-400" />
@@ -353,6 +449,7 @@ export const CommitsDiffsStage: React.FC<CommitsDiffsStageProps> = ({
                 Commits up to <code className="text-emerald-400 font-mono bg-black/40 px-1.5 py-0.5 rounded">{baselineArchiveCommit.shortHash}</code> were already reviewed and approved. <strong>DO NOT credit hours for commits up to this hash.</strong> Reviewers must strictly inspect the diff from <code className="text-emerald-400 font-mono bg-black/40 px-1.5 py-0.5 rounded">{baselineArchiveCommit.shortHash}...HEAD</code>.
               </p>
             </div>
+
             <div className="flex items-center gap-2 shrink-0">
               <a
                 href={`${project.codeUrl}/compare/${baselineArchiveCommit.commitHash}...HEAD`}
@@ -365,126 +462,67 @@ export const CommitsDiffsStage: React.FC<CommitsDiffsStageProps> = ({
               </a>
             </div>
           </div>
-          {baselineIndex === 0 && (
-            <div className="p-2.5 rounded-lg bg-rose-950/60 border border-rose-500/40 text-rose-200 text-xs font-semibold flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
-              <span>🚨 Critical Blocker: Repository HEAD is identical to the baseline archive commit ({baselineArchiveCommit.shortHash}). No new commits have been pushed since the prior approved ship!</span>
+
+          {/* Critical Blocker: HEAD is Identical to Baseline */}
+          {isHeadIdenticalToBaseline && (
+            <div className="p-3 rounded-lg bg-rose-900/80 border border-rose-400 text-white text-xs font-semibold flex items-center justify-between gap-3 shadow-lg">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-5 h-5 text-rose-300 shrink-0" />
+                <span>
+                  🚨 Critical Blocker: Repository HEAD is identical to the baseline archive commit ({baselineArchiveCommit.shortHash}). Zero new commits have been pushed since the prior approved ship!
+                </span>
+              </div>
+              {onEarlyExit && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    onEarlyExit(
+                      `Double-Dip Zero Progress: Current repo HEAD is identical to previously approved archive commit (${baselineArchiveCommit.shortHash})`
+                    )
+                  }
+                  className="px-3 py-1 rounded bg-rose-950 hover:bg-black text-white text-xs font-bold border border-rose-400 shrink-0 shadow-sm"
+                >
+                  Reject for Zero Progress
+                </button>
+              )}
             </div>
           )}
         </div>
       )}
 
-      {/* GitHub Rate Limit Banner (Graceful fallback notice) */}
+      {/* GitHub Rate Limit Banner if hit */}
       {isRateLimited && (
         <div className="p-4 rounded-xl bg-amber-950/40 border border-amber-500/40 text-amber-200 flex items-start gap-3 shadow-lg shrink-0">
           <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
-          <div className="text-xs space-y-1.5 flex-1">
+          <div className="text-xs space-y-1 flex-1">
             <span className="font-bold text-amber-300 block text-sm">
-              GitHub API Unauthenticated Rate Limit (60 req/hr) Encountered
+              GitHub API Unauthenticated Rate Limit Encountered
             </span>
             <p className="text-amber-200/90 leading-relaxed">
-              GitHub limits unauthenticated API queries per IP address. The repository README was fetched directly via raw files, but full commit diffs cannot be queried via API at this moment. Review commits directly on GitHub.
+              GitHub limits unauthenticated API queries per IP. Commit diffs cannot be queried via API at this moment. Review commits directly on GitHub.
             </p>
-            <div className="flex items-center gap-3 pt-1">
-              <a
-                href={`${project.codeUrl}/commits`}
-                target="_blank"
-                rel="noreferrer"
-                className="px-3 py-1 rounded-lg bg-brand-orange text-white font-semibold hover:bg-orange-600 transition-colors inline-flex items-center gap-1"
-              >
-                <span>Inspect Commits Directly on GitHub</span>
-                <ExternalLink className="w-3 h-3" />
-              </a>
-            </div>
           </div>
         </div>
       )}
 
-      {/* Top Signal Strip 1: High-Level Commit Classification Metrics */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5 shrink-0">
-        {/* Core Commits */}
-        <div className="p-4 rounded-xl bg-[#121214] border border-[#27272a] text-white space-y-1 shadow-lg">
-          <span className="text-[10px] font-semibold text-[#a1a1aa] uppercase tracking-wider flex items-center gap-1.5 font-sans">
-            <GitCommit className="w-3.5 h-3.5 text-emerald-400" />
-            Core Engineering
-          </span>
-          <div className="text-xl font-bold font-mono text-emerald-400">
-            {coreCommits.length} commits
-          </div>
-          <span className="text-[11px] text-[#71717a] font-mono">
-            {corePercent}% of total diff changes
-          </span>
-        </div>
-
-        {/* Cosmetic / Doc Commits */}
-        <div className="p-4 rounded-xl bg-[#121214] border border-[#27272a] text-white space-y-1 shadow-lg">
-          <span className="text-[10px] font-semibold text-[#a1a1aa] uppercase tracking-wider flex items-center gap-1.5 font-sans">
-            <FileText className="w-3.5 h-3.5 text-blue-400" />
-            Cosmetic / Assets
-          </span>
-          <div className="text-xl font-bold font-mono text-blue-400">
-            {cosmeticCommits.length} commits
-          </div>
-          <span className="text-[11px] text-[#71717a] font-mono">
-            README, licenses, or image assets
-          </span>
-        </div>
-
-        {/* Huge Dump Commits */}
-        <div className="p-4 rounded-xl bg-[#121214] border border-[#27272a] text-white space-y-1 shadow-lg">
-          <span className="text-[10px] font-semibold text-[#a1a1aa] uppercase tracking-wider flex items-center gap-1.5 font-sans">
-            <AlertTriangle className={`w-3.5 h-3.5 ${hugeDumpCommits.length > 0 ? 'text-amber-400' : 'text-[#71717a]'}`} />
-            Mass Code Dumps
-          </span>
-          <div className={`text-xl font-bold font-mono ${hugeDumpCommits.length > 0 ? 'text-amber-400' : 'text-[#d4d4d8]'}`}>
-            {hugeDumpCommits.length} huge
-          </div>
-          <span className="text-[11px] text-[#71717a] font-mono">
-            {hugeDumpCommits.length > 0 ? '>1,000 lines dropped in 1 shot' : 'None detected'}
-          </span>
-        </div>
-
-        {/* Timeline Span */}
-        <div className="p-4 rounded-xl bg-[#121214] border border-[#27272a] text-white space-y-1 shadow-lg">
-          <span className="text-[10px] font-semibold text-[#a1a1aa] uppercase tracking-wider flex items-center gap-1.5 font-sans">
-            <Clock className="w-3.5 h-3.5 text-brand-orange" />
-            Timeline Span
-          </span>
-          <div className="text-xl font-bold font-mono text-white">
-            {timelineDuration ? timelineDuration.text : `${classifiedCommits.length} commits`}
-          </div>
-          <span className="text-[11px] text-[#71717a] font-mono">
-            Claimed {project.submittedHours} hrs
-          </span>
-        </div>
-      </div>
-
-      {/* Top Signal Strip 2: OVERALL REPOSITORY AI SIGNAL (Not commit-wise, right at the top!) */}
+      {/* AI Footprint & Heuristics Overview Strip */}
       <div
-        className={`p-4 rounded-2xl border text-white space-y-2.5 shadow-lg shrink-0 ${
+        className={`p-4 rounded-2xl border text-white space-y-2 shadow-lg shrink-0 ${
           overallAiEvaluation.level === 'high'
             ? 'bg-rose-950/40 border-rose-500/50'
             : overallAiEvaluation.level === 'moderate'
             ? 'bg-amber-950/40 border-amber-500/50'
-            : 'bg-[#121214] border-emerald-500/30'
+            : 'bg-[#121214] border-[#27272a]'
         }`}
       >
-        <div className="flex items-center justify-between border-b border-[#27272a]/60 pb-2.5">
+        <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Bot
-              className={`w-4 h-4 ${
-                overallAiEvaluation.level === 'high'
-                  ? 'text-rose-400'
-                  : overallAiEvaluation.level === 'moderate'
-                  ? 'text-amber-400'
-                  : 'text-emerald-400'
-              }`}
-            />
+            <Bot className="w-4 h-4 text-brand-orange" />
             <span className="text-xs font-bold uppercase tracking-wider text-white">
-              Overall Repository AI Evaluation:
+              AI Footprint & Progression Evaluation
             </span>
             <span
-              className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase ${
+              className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase ${
                 overallAiEvaluation.level === 'high'
                   ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
                   : overallAiEvaluation.level === 'moderate'
@@ -497,7 +535,7 @@ export const CommitsDiffsStage: React.FC<CommitsDiffsStageProps> = ({
           </div>
 
           <span className="text-[11px] font-mono text-[#a1a1aa]">
-            {rawCommits.length} total commits analyzed
+            {classifiedCommits.length} total commits analyzed
           </span>
         </div>
 
@@ -511,34 +549,138 @@ export const CommitsDiffsStage: React.FC<CommitsDiffsStageProps> = ({
         </ul>
       </div>
 
-      {/* Commit Explorer Grid (Sleek Dark Console Aesthetic) */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 flex-1 min-h-[440px]">
-        {/* Left column: Commits Timeline with Category Badges */}
-        <div className="lg:col-span-5 bg-[#121214] border border-[#27272a] rounded-2xl flex flex-col overflow-hidden shadow-lg">
-          <div className="p-3.5 bg-[#18181b] border-b border-[#27272a] flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-white flex items-center gap-1.5">
-              <GitCommit className="w-4 h-4 text-brand-orange" />
-              Commit Timeline ({classifiedCommits.length})
-            </span>
-            <div className="flex items-center gap-1.5 font-mono text-[11px]">
-              <span className="text-emerald-400 font-semibold">+{totalAdditions}</span>
-              <span className="text-rose-400 font-semibold">-{totalDeletions}</span>
+      {/* Deleted Files & Purged Traces Scanner (Smoking Gun Card) */}
+      {purgedFiles.length > 0 && (
+        <div className="p-4 rounded-2xl bg-[#121214] border border-rose-500/30 text-white space-y-3 shadow-lg shrink-0">
+          <div className="flex items-center justify-between border-b border-[#27272a] pb-2.5">
+            <div className="flex items-center gap-2">
+              <Trash2 className="w-4 h-4 text-rose-400" />
+              <h3 className="text-xs font-bold uppercase tracking-wider text-white">
+                Deleted Files & Purged Traces Scanner ({purgedFiles.length} files removed in git history)
+              </h3>
             </div>
+            <span className="text-[11px] text-[#a1a1aa] font-mono">
+              Scans for purged AI prompts, agent rules, and scaffold boilerplate
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5">
+            {purgedFiles.map((pf, idx) => (
+              <div
+                key={idx}
+                className={`p-2.5 rounded-xl border text-xs font-mono space-y-1 ${
+                  pf.isAiTrace
+                    ? 'bg-purple-950/40 border-purple-500/50 text-white'
+                    : pf.isBoilerplateTrace
+                    ? 'bg-amber-950/40 border-amber-500/50 text-white'
+                    : 'bg-[#18181b] border-[#27272a] text-[#d4d4d8]'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="truncate font-semibold text-white max-w-[190px]">
+                    {pf.filename}
+                  </span>
+                  {pf.isAiTrace ? (
+                    <span className="px-1.5 py-0.2 rounded text-[9px] uppercase font-bold bg-purple-500/30 text-purple-300 border border-purple-500/40">
+                      AI CONFIG TRACE
+                    </span>
+                  ) : pf.isBoilerplateTrace ? (
+                    <span className="px-1.5 py-0.2 rounded text-[9px] uppercase font-bold bg-amber-500/30 text-amber-300 border border-amber-500/40">
+                      SCAFFOLD TRACE
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-rose-400 font-semibold">
+                      -{pf.deletions}
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center justify-between text-[10px] text-[#a1a1aa] pt-0.5">
+                  <span>Purged in {pf.commitSha}</span>
+                  <span>{pf.date ? new Date(pf.date).toLocaleDateString() : ''}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Main Commit Explorer Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 flex-1 min-h-[460px]">
+        {/* Left column: Commits Timeline with Scope Filter & Baseline Badges (5 Cols) */}
+        <div className="lg:col-span-5 bg-[#121214] border border-[#27272a] rounded-2xl flex flex-col overflow-hidden shadow-lg">
+          {/* Header ribbon with Scope Toggle */}
+          <div className="p-3.5 bg-[#18181b] border-b border-[#27272a] space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold uppercase tracking-wider text-white flex items-center gap-1.5">
+                <GitCommit className="w-4 h-4 text-brand-orange" />
+                Commit Timeline ({visibleCommits.length})
+              </span>
+              <div className="flex items-center gap-1.5 font-mono text-[11px]">
+                <span className="text-emerald-400 font-semibold">+{totalAdditions}</span>
+                <span className="text-rose-400 font-semibold">-{totalDeletions}</span>
+              </div>
+            </div>
+
+            {/* Scope Filter Toggle (Current Ship vs Full Repo) */}
+            {baselineArchiveCommit && baselineIndex !== -1 && (
+              <div className="flex items-center bg-[#121214] p-1 rounded-lg border border-[#27272a] text-xs">
+                <button
+                  type="button"
+                  onClick={() => setViewScope('current_ship')}
+                  className={`flex-1 py-1 rounded text-center font-medium transition-colors ${
+                    viewScope === 'current_ship'
+                      ? 'bg-brand-orange text-white font-semibold shadow-sm'
+                      : 'text-[#a1a1aa] hover:text-white'
+                  }`}
+                >
+                  Current Ship Only ({baselineIndex} new)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewScope('full_repo')}
+                  className={`flex-1 py-1 rounded text-center font-medium transition-colors ${
+                    viewScope === 'full_repo'
+                      ? 'bg-brand-orange text-white font-semibold shadow-sm'
+                      : 'text-[#a1a1aa] hover:text-white'
+                  }`}
+                >
+                  Full History ({classifiedCommits.length})
+                </button>
+              </div>
+            )}
+
+            {/* File Filter Pill if active */}
+            {selectedFileFilter && (
+              <div className="flex items-center justify-between px-2 py-1 rounded bg-[#27272a] text-xs font-mono text-white">
+                <span className="truncate max-w-[220px]">
+                  Filtered to file: <strong>{selectedFileFilter}</strong>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setSelectedFileFilter(null)}
+                  className="text-[#a1a1aa] hover:text-white p-0.5"
+                  title="Clear file filter"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
           </div>
 
           <div className="flex-1 overflow-y-auto divide-y divide-[#27272a]">
-            {classifiedCommits.length === 0 ? (
+            {visibleCommits.length === 0 ? (
               <div className="p-8 text-center text-xs text-[#71717a] space-y-2">
                 <GitCommit className="w-6 h-6 text-[#52525b] mx-auto" />
                 <p>
                   {isRateLimited
                     ? 'Commits rate-limited by GitHub API. Use GitHub Commits link above.'
-                    : 'No commits returned or repository is empty.'}
+                    : 'No commits in this view scope.'}
                 </p>
               </div>
             ) : (
-              classifiedCommits.map((c, cIdx) => {
+              visibleCommits.map((c) => {
                 const isSelected = selectedCommit?.sha === c.sha;
+                const cIdx = classifiedCommits.findIndex((x) => x.sha === c.sha);
                 const isBaseline = baselineIndex !== -1 && cIdx === baselineIndex;
                 const isHistorical = baselineIndex !== -1 && cIdx > baselineIndex;
                 const isPostBaseline = baselineIndex !== -1 && cIdx < baselineIndex;
@@ -561,6 +703,7 @@ export const CommitsDiffsStage: React.FC<CommitsDiffsStageProps> = ({
                         <span className="text-xs font-mono font-bold text-white truncate">
                           {c.shortSha}
                         </span>
+
                         {isBaseline ? (
                           <span className="px-1.5 py-0.2 rounded text-[9px] font-mono uppercase font-bold bg-purple-950/80 text-purple-300 border border-purple-500/40">
                             ARCHIVE BOUNDARY
@@ -574,25 +717,42 @@ export const CommitsDiffsStage: React.FC<CommitsDiffsStageProps> = ({
                             PRIOR SHIP
                           </span>
                         ) : null}
+
+                        {/* Code dump badge */}
+                        {c.isDump && (
+                          <span className="px-1.5 py-0.2 rounded text-[9px] font-mono uppercase font-bold bg-rose-950/80 text-rose-300 border border-rose-500/40 inline-flex items-center gap-1">
+                            <Flame className="w-2.5 h-2.5 text-rose-400" />
+                            {c.dumpPercent}% CODE DUMP
+                          </span>
+                        )}
+
                         <span
                           className={`px-1.5 py-0.2 rounded text-[9px] font-mono uppercase font-bold ${
                             c.category === 'core'
                               ? 'bg-emerald-950/60 text-emerald-400 border border-emerald-500/30'
                               : c.category === 'huge_dump'
                               ? 'bg-amber-950/60 text-amber-400 border border-amber-500/30'
+                              : c.category === 'boilerplate'
+                              ? 'bg-blue-950/60 text-blue-400 border border-blue-500/30'
                               : 'bg-zinc-800 text-zinc-400 border border-zinc-700'
                           }`}
                         >
-                          {c.category === 'huge_dump' ? 'MASS DUMP' : c.category.toUpperCase()}
+                          {c.category === 'boilerplate'
+                            ? 'BOILERPLATE'
+                            : c.category === 'huge_dump'
+                            ? 'MASS DUMP'
+                            : c.category.toUpperCase()}
                         </span>
                       </div>
                       <span className="text-[11px] text-[#71717a] font-mono shrink-0">
                         {c.date ? new Date(c.date).toLocaleDateString() : ''}
                       </span>
                     </div>
+
                     <p className="text-xs font-medium text-[#d4d4d8] line-clamp-2 mt-1">
                       {c.message}
                     </p>
+
                     <div className="flex items-center gap-2 mt-2 text-[11px] font-mono text-[#71717a]">
                       <span className="text-[#a1a1aa]">{c.author}</span>
                       <span>·</span>
@@ -608,25 +768,26 @@ export const CommitsDiffsStage: React.FC<CommitsDiffsStageProps> = ({
           </div>
         </div>
 
-        {/* Right column: Changed Files & Diffs Inspector */}
+        {/* Right column: Changed Files & Diffs Inspector with HIGH-CONTRAST Link (7 Cols) */}
         <div className="lg:col-span-7 bg-[#121214] border border-[#27272a] rounded-2xl flex flex-col overflow-hidden shadow-lg">
           <div className="p-3.5 bg-[#18181b] border-b border-[#27272a] flex items-center justify-between">
             <div className="flex items-center gap-2">
               <FileCode className="w-4 h-4 text-brand-orange" />
               <span className="text-xs font-bold uppercase tracking-wider text-white">
-                Changed Files in Commit {selectedCommit?.shortSha || ''} ({selectedCommit?.files?.length || 0})
+                Changed Files in {selectedCommit?.shortSha || ''} ({selectedCommit?.files?.length || 0})
               </span>
             </div>
 
+            {/* HIGH CONTRAST ORANGE BUTTON FOR COMMIT DIFF */}
             {selectedCommit && (
               <a
                 href={selectedCommit.htmlUrl}
                 target="_blank"
                 rel="noreferrer"
-                className="text-xs text-brand-orange hover:underline font-mono inline-flex items-center gap-1"
+                className="px-2.5 py-1 rounded-md bg-brand-orange/20 hover:bg-brand-orange/30 text-brand-orange border border-brand-orange/40 text-xs font-mono font-semibold inline-flex items-center gap-1.5 transition-colors shadow-sm"
               >
-                <span>Full GitHub Commit Diff</span>
-                <ExternalLink className="w-3 h-3" />
+                <span>View full commit diff</span>
+                <ExternalLink className="w-3.5 h-3.5 text-brand-orange" />
               </a>
             )}
           </div>
@@ -645,7 +806,14 @@ export const CommitsDiffsStage: React.FC<CommitsDiffsStageProps> = ({
                   >
                     <div className="flex items-center gap-2 min-w-0 pr-2">
                       <FileCode className="w-3.5 h-3.5 text-[#71717a] shrink-0" />
-                      <span className="text-[#d4d4d8] truncate">{file.filename}</span>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedFileFilter(file.filename)}
+                        className="text-[#d4d4d8] hover:text-brand-orange hover:underline truncate text-left cursor-pointer"
+                        title="Click to inspect this file's commit iterations"
+                      >
+                        {file.filename}
+                      </button>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
                       <span
@@ -670,158 +838,158 @@ export const CommitsDiffsStage: React.FC<CommitsDiffsStageProps> = ({
         </div>
       </div>
 
-      {/* File-Wise Aggregate Metrics Table */}
-      {fileWiseMetrics.length > 0 && (
-        <div className="p-5 rounded-2xl bg-[#121214] border border-[#27272a] text-white space-y-3.5 shadow-lg shrink-0">
-          <div className="flex items-center justify-between border-b border-[#27272a] pb-3">
-            <div className="flex items-center gap-2">
-              <FileCode className="w-4 h-4 text-brand-orange" />
-              <h3 className="text-xs font-bold uppercase tracking-wider text-white">
-                File-Wise Code Churn & Frequency Metrics ({fileWiseMetrics.length} files modified)
-              </h3>
-            </div>
-            <span className="text-[11px] text-[#a1a1aa] font-mono">
-              Sorted by net code changes (additions + deletions)
-            </span>
+      {/* DUAL TIMELINE: File Iterations & Aggregate Churn Table */}
+      <div className="p-5 rounded-2xl bg-[#121214] border border-[#27272a] text-white space-y-4 shadow-lg shrink-0">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#27272a] pb-3">
+          <div className="flex items-center gap-2">
+            <FileCode className="w-4 h-4 text-brand-orange" />
+            <h3 className="text-xs font-bold uppercase tracking-wider text-white">
+              File-Wise Code Churn & Iteration Explorer ({fileWiseMetrics.length} files)
+            </h3>
           </div>
+          <span className="text-[11px] text-[#a1a1aa] font-mono">
+            💡 Click any file row below to trace all commits that modified it
+          </span>
+        </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs border-collapse">
-              <thead>
-                <tr className="border-b border-[#27272a] text-[11px] text-[#a1a1aa] font-mono">
-                  <th className="pb-2 font-semibold">File Path</th>
-                  <th className="pb-2 font-semibold">Category</th>
-                  <th className="pb-2 font-semibold text-center">Commits Touching</th>
-                  <th className="pb-2 font-semibold text-right">Additions</th>
-                  <th className="pb-2 font-semibold text-right">Deletions</th>
-                  <th className="pb-2 font-semibold text-right">Net Churn</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#1e1e24] font-mono">
-                {fileWiseMetrics.slice(0, 15).map((f, i) => (
-                  <tr key={i} className="hover:bg-[#18181b] transition-colors">
-                    <td className="py-2 pr-3 font-semibold text-white truncate max-w-xs" title={f.filename}>
-                      {f.filename}
+        {/* Selected File Iteration Inspector if active */}
+        {selectedFileMetric && (
+          <div className="p-4 rounded-xl bg-[#18181b] border border-brand-orange/40 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-white font-mono flex items-center gap-2">
+                <FileCode className="w-4 h-4 text-brand-orange" />
+                Commit Iterations for: <code className="text-brand-orange">{selectedFileMetric.filename}</code>
+              </span>
+              <button
+                type="button"
+                onClick={() => setSelectedFileFilter(null)}
+                className="text-xs text-[#a1a1aa] hover:text-white px-2 py-0.5 rounded bg-[#27272a]"
+              >
+                Close File View
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 text-xs font-mono">
+              {selectedFileMetric.commitsTouching.map((cTouch, idx) => (
+                <div
+                  key={idx}
+                  className="p-2.5 rounded-lg bg-[#121214] border border-[#27272a] space-y-1 cursor-pointer hover:border-brand-orange transition-colors"
+                  onClick={() => setSelectedCommitSha(cTouch.sha)}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-brand-orange">{cTouch.shortSha}</span>
+                    <span className="text-[#a1a1aa] text-[10px]">
+                      {cTouch.date ? new Date(cTouch.date).toLocaleDateString() : ''}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-[#d4d4d8] truncate">{cTouch.message}</p>
+                  <div className="flex items-center gap-1.5 text-[10px]">
+                    <span className="text-emerald-400">+{cTouch.additions}</span>
+                    <span className="text-rose-400">-{cTouch.deletions}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Full File-Wise Churn Table */}
+        <div className="overflow-x-auto max-h-72">
+          <table className="w-full text-left text-xs border-collapse">
+            <thead>
+              <tr className="border-b border-[#27272a] text-[11px] text-[#a1a1aa] font-mono sticky top-0 bg-[#121214]">
+                <th className="pb-2 font-semibold">File Path (Click to Inspect)</th>
+                <th className="pb-2 font-semibold">Category</th>
+                <th className="pb-2 font-semibold text-center">Commits Touching</th>
+                <th className="pb-2 font-semibold text-right">Additions</th>
+                <th className="pb-2 font-semibold text-right">Deletions</th>
+                <th className="pb-2 font-semibold text-right">Net Churn</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#1e1e24] font-mono">
+              {fileWiseMetrics.map((file) => {
+                const isSelected = selectedFileFilter === file.filename;
+                return (
+                  <tr
+                    key={file.filename}
+                    onClick={() =>
+                      setSelectedFileFilter(isSelected ? null : file.filename)
+                    }
+                    className={`cursor-pointer transition-colors ${
+                      isSelected
+                        ? 'bg-brand-orange/20 text-white font-semibold'
+                        : 'hover:bg-[#18181b] text-[#d4d4d8]'
+                    }`}
+                  >
+                    <td className="py-2.5 pr-4 truncate max-w-xs">
+                      <div className="flex items-center gap-2">
+                        <FileCode className="w-3.5 h-3.5 text-[#71717a] shrink-0" />
+                        <span className="truncate">{file.filename}</span>
+                      </div>
                     </td>
-                    <td className="py-2 pr-3">
+                    <td className="py-2.5">
                       <span
-                        className={`px-1.5 py-0.5 rounded text-[10px] uppercase font-bold ${
-                          f.category === 'Code'
-                            ? 'bg-blue-950/60 text-blue-400 border border-blue-500/30'
-                            : f.category === 'Markup'
-                            ? 'bg-amber-950/60 text-amber-400 border border-amber-500/30'
-                            : f.category === 'Config'
-                            ? 'bg-purple-950/60 text-purple-400 border border-purple-500/30'
-                            : 'bg-zinc-800 text-zinc-400 border border-zinc-700'
+                        className={`px-1.5 py-0.2 rounded text-[10px] uppercase font-semibold ${
+                          file.category === 'Code'
+                            ? 'bg-emerald-500/20 text-emerald-400'
+                            : file.category === 'Config'
+                            ? 'bg-blue-500/20 text-blue-400'
+                            : file.category === 'Asset'
+                            ? 'bg-amber-500/20 text-amber-400'
+                            : 'bg-zinc-800 text-zinc-400'
                         }`}
                       >
-                        {f.category}
+                        {file.category}
                       </span>
                     </td>
-                    <td className="py-2 px-3 text-center text-zinc-300">
-                      {f.commitCount} commit{f.commitCount !== 1 ? 's' : ''}
-                    </td>
-                    <td className="py-2 pl-3 text-right text-emerald-400 font-semibold">
-                      +{f.additions}
-                    </td>
-                    <td className="py-2 pl-3 text-right text-rose-400 font-semibold">
-                      -{f.deletions}
-                    </td>
-                    <td className="py-2 pl-3 text-right font-bold text-amber-300">
-                      {f.changes} lines
+                    <td className="py-2.5 text-center text-[#e4e4e7]">{file.commitCount}</td>
+                    <td className="py-2.5 text-right text-emerald-400">+{file.additions}</td>
+                    <td className="py-2.5 text-right text-rose-400">-{file.deletions}</td>
+                    <td className="py-2.5 text-right font-bold text-white">
+                      {file.additions - file.deletions >= 0 ? '+' : ''}
+                      {file.additions - file.deletions}
                     </td>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* Interactive Reviewer Pass/Fail Checklist */}
-      <div className="p-5 rounded-2xl bg-[#121214] border border-[#27272a] text-white space-y-3.5 shadow-lg shrink-0">
-        <div className="flex items-center justify-between border-b border-[#27272a] pb-3">
-          <h3 className="text-xs font-bold uppercase tracking-wider text-white">
-            Stage 6 Verification: Code Integrity & Progression Checks
-          </h3>
-          <span className="text-xs text-[#a1a1aa]">Select Pass or Fail for each criterion</span>
-        </div>
-
-        <div className="space-y-2.5">
-          <PassFailControl
-            label="Commits Demonstrate Genuine Iterative Engineering"
-            description="Development happened incrementally across distinct working sessions without unnatural mass dumps."
-            status={reviewChecklist['stage5_incremental_commits']}
-            onPass={() => handlePass('stage5_incremental_commits')}
-            onFail={() => handleFail('stage5_incremental_commits')}
-          />
-
-          <PassFailControl
-            label="Code Driven by Core Logic (Not Inflated by Cosmetic/Asset Uploads)"
-            description={`Verified that code diffs (${corePercent}% core logic) reflect real problem solving, not simply bulk image or documentation uploads.`}
-            status={reviewChecklist['stage5_core_progress_verified']}
-            onPass={() => handlePass('stage5_core_progress_verified')}
-            onFail={() => handleFail('stage5_core_progress_verified')}
-          />
-
-          <PassFailControl
-            label="Overall Repository AI Signal Evaluated"
-            description="Repository verified for authentic authorship without one-shot AI dumping or uncredited template copying."
-            status={reviewChecklist['stage5_ai_risk_evaluated']}
-            onPass={() => handlePass('stage5_ai_risk_evaluated')}
-            onFail={() => handleFail('stage5_ai_risk_evaluated')}
-          />
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       </div>
 
-      {/* Reviewer Action Bar */}
-      <div className="pt-4 flex items-center justify-between border-t border-border-subtle shrink-0">
-        {isFlagging ? (
-          <div className="flex items-center gap-2 flex-1 max-w-md mr-4">
-            <input
-              type="text"
-              value={flagNote}
-              onChange={(e) => setFlagNote(e.target.value)}
-              placeholder="Reason for code integrity concern..."
-              className="text-xs px-3 py-1.5 rounded-lg border border-border bg-canvas-card text-content-primary flex-1 focus:outline-none focus:border-brand-orange"
-            />
-            <button
-              type="button"
-              onClick={() => {
-                if (onEarlyExit && flagNote.trim()) {
-                  onEarlyExit(`Code Integrity Concern: ${flagNote.trim()}`);
-                }
-                setIsFlagging(false);
-              }}
-              className="px-3 py-1.5 rounded-lg bg-semantic-danger text-white text-xs font-semibold hover:bg-red-700 transition-colors shrink-0 cursor-pointer"
-            >
-              Confirm Flag
-            </button>
-            <button
-              type="button"
-              onClick={() => setIsFlagging(false)}
-              className="px-2.5 py-1.5 text-xs text-content-tertiary hover:text-content-primary cursor-pointer"
-            >
-              Cancel
-            </button>
-          </div>
-        ) : (
-          <button
-            type="button"
-            onClick={() => setIsFlagging(true)}
-            className="px-3.5 py-2 rounded-lg bg-canvas-card border border-border-subtle text-xs font-semibold text-content-secondary hover:text-semantic-danger hover:border-semantic-dangerBorder transition-colors flex items-center gap-1.5 shadow-sm cursor-pointer"
-          >
-            <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
-            <span>Flag Code Integrity Concern</span>
-          </button>
-        )}
+      {/* Stage Checklist & Advance */}
+      <div className="p-4 rounded-xl bg-[#121214] border border-[#27272a] text-white flex items-center justify-between shrink-0">
+        <div>
+          <span className="text-xs font-bold text-white block">
+            Git Integrity & Incremental Progress Check
+          </span>
+          <p className="text-[11px] text-[#a1a1aa]">
+            Verified that code history demonstrates genuine iterative problem-solving and authentic development progression.
+          </p>
+        </div>
+
+        <PassFailControl
+          label="Git Progression"
+          status={reviewChecklist.commits_diffs}
+          onPass={() => handlePass('commits_diffs')}
+          onFail={() => handleFail('commits_diffs')}
+        />
+      </div>
+
+      {/* Footer Navigation Bar */}
+      <div className="pt-4 border-t border-border-subtle flex items-center justify-between shrink-0">
+        <div className="flex items-center gap-3 text-xs">
+          <span className="text-content-tertiary">
+            Progress through stages to formulate the final verdict.
+          </span>
+        </div>
 
         <button
           type="button"
           onClick={onAdvance}
-          className="px-5 py-2 rounded-lg bg-brand-orange text-white hover:bg-orange-600 text-xs font-semibold transition-colors shadow-sm flex items-center gap-1.5 cursor-pointer"
+          className="px-5 py-2.5 rounded-lg bg-brand-orange text-white text-xs font-semibold hover:bg-orange-600 transition-colors shadow-sm cursor-pointer"
         >
-          <span>Continue to Final Verdict Desk →</span>
+          Next: Verdict Desk →
         </button>
       </div>
     </div>
