@@ -8,6 +8,7 @@ import {
   Check,
   ChevronDown,
   ChevronUp,
+  Bot,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { saveProjectNote } from '../../lib/api';
@@ -19,6 +20,7 @@ interface ReviewSidebarProps {
   auditHistory: AuditLogEntry[];
   onNoteAdded: (entry: AuditLogEntry) => void;
   reviewChecklist: Record<string, boolean>;
+  onToggleChecklist?: (key: string, status?: boolean) => void;
 }
 
 export const ReviewSidebar: React.FC<ReviewSidebarProps> = ({
@@ -26,6 +28,7 @@ export const ReviewSidebar: React.FC<ReviewSidebarProps> = ({
   auditHistory,
   onNoteAdded,
   reviewChecklist,
+  onToggleChecklist,
 }) => {
   const [noteText, setNoteText] = useState('');
   const [isSubmittingNote, setIsSubmittingNote] = useState(false);
@@ -93,6 +96,27 @@ export const ReviewSidebar: React.FC<ReviewSidebarProps> = ({
               {project.submittedHours} hrs
             </span>
           </div>
+        </div>
+
+        {/* Small Optional AI-Generated Flag Toggle */}
+        <div className="pt-2 border-t border-[#27272a]">
+          <button
+            type="button"
+            onClick={() => onToggleChecklist?.('flag_ai_generated')}
+            className={`w-full py-1.5 px-2.5 rounded-lg border text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+              reviewChecklist['flag_ai_generated']
+                ? 'bg-amber-950/60 border-amber-500/60 text-amber-300 shadow-sm ring-1 ring-amber-500/30'
+                : 'bg-[#18181b] border-[#27272a] text-[#a1a1aa] hover:text-white hover:border-[#3f3f46]'
+            }`}
+            title="Mark this project as AI-generated or containing massive prompt dumps"
+          >
+            <Bot className="w-3.5 h-3.5" />
+            <span>
+              {reviewChecklist['flag_ai_generated']
+                ? 'Flagged: AI-Generated Code ✓'
+                : 'Mark as AI-Generated'}
+            </span>
+          </button>
         </div>
 
         {/* Quick Links with Copy and Open (Supports up to 4+ Code, Demo, and Archive Links) */}

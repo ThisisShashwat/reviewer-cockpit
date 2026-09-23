@@ -274,6 +274,7 @@ export const ReviewPage: React.FC<ReviewPageProps> = ({
           auditHistory={auditHistory}
           onNoteAdded={onNoteAdded}
           reviewChecklist={reviewChecklist}
+          onToggleChecklist={toggleChecklist}
         />
 
         {/* Right Stage Workspace */}

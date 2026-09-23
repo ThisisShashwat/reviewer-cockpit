@@ -39,7 +39,7 @@ export const GitHubTokenModal: React.FC<GitHubTokenModalProps> = ({ isOpen, onCl
       const res = await fetch('https://api.github.com/rate_limit', {
         headers: {
           Accept: 'application/vnd.github.v3+json',
-          Authorization: `token ${trimmed}`,
+          Authorization: `Bearer ${trimmed}`,
         },
       });
 

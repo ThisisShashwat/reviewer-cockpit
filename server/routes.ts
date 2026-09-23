@@ -531,4 +531,93 @@ apiRouter.get("/archive-commit", async (req, res) => {
   }
 });
 
+// Cache for frameable check results
+const frameCheckCache = new Map<string, { canFrame: boolean; reason?: string; xfo?: string | null; csp?: string | null }>();
+
+// -------------------------------------------------------------
+// 11. PROXY CHECK-FRAME: Inspect X-Frame-Options & CSP headers
+// -------------------------------------------------------------
+apiRouter.get("/proxy/check-frame", async (req, res) => {
+  const targetUrl = String(req.query.url || "").trim();
+  if (!targetUrl || !targetUrl.startsWith("http")) {
+    res.json({ canFrame: true });
+    return;
+  }
+
+  if (frameCheckCache.has(targetUrl)) {
+    res.json(frameCheckCache.get(targetUrl));
+    return;
+  }
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 4000);
+
+    let response: Response | null = null;
+    try {
+      response = await fetch(targetUrl, {
+        method: "HEAD",
+        signal: controller.signal,
+        redirect: "follow",
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        },
+      });
+    } catch {
+      // If HEAD is rejected by server, try a lightweight GET
+      response = await fetch(targetUrl, {
+        method: "GET",
+        signal: controller.signal,
+        redirect: "follow",
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+          Range: "bytes=0-1024",
+        },
+      }).catch(() => null);
+    }
+
+    clearTimeout(timeout);
+
+    if (!response) {
+      const result = { canFrame: false, reason: "Host refused connection or timed out" };
+      frameCheckCache.set(targetUrl, result);
+      res.json(result);
+      return;
+    }
+
+    const xfo = response.headers.get("x-frame-options");
+    const csp = response.headers.get("content-security-policy");
+
+    let canFrame = true;
+    let reason: string | undefined = undefined;
+
+    if (xfo) {
+      const lowerXfo = xfo.toLowerCase().trim();
+      if (lowerXfo.includes("deny") || lowerXfo.includes("sameorigin")) {
+        canFrame = false;
+        reason = `X-Frame-Options: ${xfo}`;
+      }
+    }
+
+    if (canFrame && csp) {
+      const lowerCsp = csp.toLowerCase();
+      if (
+        lowerCsp.includes("frame-ancestors 'none'") ||
+        lowerCsp.includes("frame-ancestors 'self'") ||
+        (lowerCsp.includes("frame-ancestors") && !lowerCsp.includes("frame-ancestors *"))
+      ) {
+        canFrame = false;
+        reason = `Content-Security-Policy: frame-ancestors`;
+      }
+    }
+
+    const result = { canFrame, reason, xfo, csp };
+    frameCheckCache.set(targetUrl, result);
+    res.json(result);
+  } catch {
+    res.json({ canFrame: false, reason: "Header check failed" });
+  }
+});
+
+
 

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -12,10 +12,12 @@ import {
   AlertCircle,
   Copy,
   Check,
+  ShieldAlert,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { CockpitProject, GitHubRepoData } from '../../lib/types';
 import { PassFailControl } from '../common/PassFailControl';
+import { checkUrlFrameable } from '../../lib/api';
 
 interface PlayableDemoStageProps {
   project: CockpitProject;
@@ -37,6 +39,7 @@ export const PlayableDemoStage: React.FC<PlayableDemoStageProps> = ({
   const [viewportMode, setViewportMode] = useState<'desktop' | 'mobile'>('desktop');
   const [iframeKey, setIframeKey] = useState(0);
   const [copiedLink, setCopiedLink] = useState<string | null>(null);
+  const [forceEmbed, setForceEmbed] = useState(false);
 
   const playableUrl = (project.playableUrl || '').trim();
   const codeUrl = (project.codeUrl || '').trim();
@@ -77,6 +80,52 @@ export const PlayableDemoStage: React.FC<PlayableDemoStageProps> = ({
   const releases = gitHubData?.releases || [];
   const hasBinaryReleases = releases.some((r) => r.assets && r.assets.length > 0);
 
+  // Automatic X-Frame-Options & CSP Header Inspection
+  const [frameCheck, setFrameCheck] = useState<{
+    isLoading: boolean;
+    canFrame: boolean;
+    reason?: string;
+  }>({
+    isLoading: !isYouTube && !isDirectVideo && Boolean(playableUrl) && !isGitHubUrl,
+    canFrame: true,
+  });
+
+  const hasAutoOpenedRef = useRef<Record<string, boolean>>({});
+
+  useEffect(() => {
+    let mounted = true;
+    if (!playableUrl || isYouTube || isDirectVideo || isGitHubUrl) {
+      setFrameCheck({ isLoading: false, canFrame: true });
+      return;
+    }
+
+    setFrameCheck({ isLoading: true, canFrame: true });
+
+    checkUrlFrameable(playableUrl).then((res) => {
+      if (!mounted) return;
+      setFrameCheck({
+        isLoading: false,
+        canFrame: res.canFrame,
+        reason: res.reason,
+      });
+
+      // Automatically detect that X-Frame-Options is denied and open it in a new tab!
+      if (!res.canFrame && !hasAutoOpenedRef.current[project.id]) {
+        hasAutoOpenedRef.current[project.id] = true;
+        try {
+          window.open(playableUrl, '_blank');
+          toast.info('Application opened in a new tab (iframe embedding blocked by server headers)');
+        } catch {
+          // Handled via prominent UI button if browser popup blocker intervened
+        }
+      }
+    });
+
+    return () => {
+      mounted = false;
+    };
+  }, [playableUrl, isYouTube, isDirectVideo, isGitHubUrl, project.id]);
+
   const getYouTubeEmbedUrl = (url: string) => {
     const match = url.match(
       /(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/
@@ -99,18 +148,13 @@ export const PlayableDemoStage: React.FC<PlayableDemoStageProps> = ({
     setTimeout(() => setCopiedLink(null), 2000);
   };
 
-  // Status computation
+  // SINGLE CHECKBOX: Playable URL includes host compliance automatically!
+  // If host compliance fails (isProhibitedHost), autoPass is FALSE (FAIL).
+  const isPlayableAutoPassed = Boolean(playableUrl && !isDuplicateCodeAndDemo && !isProhibitedHost);
   const isPlayableExplicitPassed = reviewChecklist['shipped_playable_valid'] === true;
   const isPlayableExplicitFailed = reviewChecklist['shipped_playable_valid'] === false;
-  const isPlayableAutoPassed = Boolean(playableUrl && !isDuplicateCodeAndDemo);
   const isPlayablePassed =
     isPlayableExplicitPassed || (isPlayableExplicitFailed ? false : isPlayableAutoPassed);
-
-  const isHostExplicitPassed = reviewChecklist['shipped_host_compliant'] === true;
-  const isHostExplicitFailed = reviewChecklist['shipped_host_compliant'] === false;
-  const isHostAutoPassed = !isProhibitedHost;
-  const isHostPassed =
-    isHostExplicitPassed || (isHostExplicitFailed ? false : isHostAutoPassed);
 
   return (
     <div className="h-full overflow-y-auto p-8 space-y-6 max-w-6xl mx-auto flex flex-col select-text">
@@ -124,10 +168,10 @@ export const PlayableDemoStage: React.FC<PlayableDemoStageProps> = ({
             <span className="text-xs text-content-tertiary">Playable Demo & Testing</span>
           </div>
           <h2 className="text-lg font-bold text-content-primary mt-1 font-heading">
-            Playable Application Demo & Host Stability
+            Playable Application Demo & Deliverable Testing
           </h2>
           <p className="text-xs text-content-tertiary mt-1 max-w-2xl">
-            Audit interactive demo functionality, test live deliverables, and verify compliance with GitBook persistent hosting rules.
+            Audit interactive demo functionality and verify deliverable stability per GitBook guidelines. Ephemeral hosts (Streamlit / Replit) automatically fail.
           </p>
         </div>
 
@@ -139,35 +183,35 @@ export const PlayableDemoStage: React.FC<PlayableDemoStageProps> = ({
               rel="noreferrer"
               className="px-4 py-2 rounded-xl bg-brand-orange hover:bg-orange-600 text-white text-xs font-bold flex items-center gap-2 transition-all shadow-md cursor-pointer"
             >
-              <span>Open Playable Demo</span>
+              <span>Open Playable Demo in New Tab</span>
               <ExternalLink className="w-3.5 h-3.5" />
             </a>
           )}
         </div>
       </div>
 
-      {/* TOP AUDIT CONTROLS: Playable Links & Host Compliance Row */}
-      <div className="bg-[#121214] border border-[#27272a] rounded-2xl p-6 text-white shadow-xl space-y-5 shrink-0">
+      {/* TOP AUDIT CONTROL: Single Playable URL Card with Bundled Host Verification */}
+      <div className="bg-[#121214] border border-[#27272a] rounded-2xl p-6 text-white shadow-xl space-y-4 shrink-0">
         <div className="flex items-center justify-between border-b border-[#27272a] pb-3">
           <div className="flex items-center gap-2">
             <Globe className="w-4 h-4 text-brand-orange" />
             <h3 className="text-xs font-bold uppercase tracking-wider text-white">
-              Deliverable Verification & Host Compliance
+              Playable Deliverable Verification
             </h3>
           </div>
           <span className="text-[11px] font-mono text-[#a1a1aa]">
-            GitBook Rules Requirement 4 & 7
+            GitBook Rules Requirement 4 (Interactive Playable Demo)
           </span>
         </div>
 
-        {/* Playable URL(s) Row with Aligned Controls */}
-        <div className="space-y-2">
+        {/* Playable URL(s) Row with Single Pass/Fail Control */}
+        <div className="space-y-3">
           {allDemos.map((demoLink, idx) => (
             <div
               key={idx}
-              className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-xl bg-[#18181b] border border-[#27272a]"
+              className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-xl bg-[#18181b] border border-[#27272a]"
             >
-              <div className="space-y-1 min-w-0 flex-1">
+              <div className="space-y-1.5 min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-semibold text-white">
                     {allDemos.length > 1 ? `Playable URL ${idx + 1}` : 'Playable Deliverable URL'}
@@ -181,6 +225,11 @@ export const PlayableDemoStage: React.FC<PlayableDemoStageProps> = ({
                       }`}
                     >
                       {isPlayablePassed ? 'PASS' : 'FAIL'}
+                    </span>
+                  )}
+                  {isProhibitedHost && (
+                    <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                      Disallowed Host
                     </span>
                   )}
                 </div>
@@ -209,13 +258,20 @@ export const PlayableDemoStage: React.FC<PlayableDemoStageProps> = ({
                     )}
                   </button>
                 </div>
+
+                {/* Automated Host Failure Notice */}
+                {isProhibitedHost && (
+                  <p className="text-xs text-rose-300 pt-1 leading-relaxed">
+                    ⚠️ <strong>Host Policy Violation:</strong> {prohibitedReason} Automatically marked as FAIL.
+                  </p>
+                )}
               </div>
 
               {idx === 0 && (
                 <div className="flex items-center gap-3 shrink-0">
-                  <span className="text-[11px] text-[#71717a] font-mono">Check</span>
+                  <span className="text-[11px] text-[#71717a] font-mono">Verdict</span>
                   <PassFailControl
-                    label="Playable Demo"
+                    label="Playable URL"
                     status={
                       isPlayableExplicitPassed
                         ? true
@@ -235,7 +291,7 @@ export const PlayableDemoStage: React.FC<PlayableDemoStageProps> = ({
             <div className="p-4 rounded-xl bg-rose-950/40 border border-rose-500/40 text-rose-300 text-xs flex items-center justify-between">
               <span className="font-semibold">No playable demo link submitted.</span>
               <PassFailControl
-                label="Playable Demo"
+                label="Playable URL"
                 status={false}
                 onPass={() => handlePass('shipped_playable_valid')}
                 onFail={() => handleFail('shipped_playable_valid')}
@@ -253,63 +309,27 @@ export const PlayableDemoStage: React.FC<PlayableDemoStageProps> = ({
           )}
         </div>
 
-        {/* Host Compliance Row with Aligned Controls */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-xl bg-[#18181b] border border-[#27272a]">
-          <div className="space-y-1 min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-semibold text-white">Host Stability Compliance</span>
-              <span
-                className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase ${
-                  isHostPassed
-                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                    : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
-                }`}
-              >
-                {isHostPassed ? 'COMPLIANT' : 'DISALLOWED HOST'}
-              </span>
-            </div>
-
-            <p className="text-xs text-[#a1a1aa] leading-relaxed">
-              {isProhibitedHost
-                ? prohibitedReason
-                : 'Compliant persistent host (e.g. Vercel, Cloudflare, Netlify, GitHub Pages, or self-hosted server).'}
-            </p>
-          </div>
-
-          <div className="flex items-center gap-3 shrink-0">
-            <span className="text-[11px] text-[#71717a] font-mono">Check</span>
-            <PassFailControl
-              label="Host Compliance"
-              status={
-                isHostExplicitPassed ? true : isHostExplicitFailed ? false : undefined
-              }
-              onPass={() => handlePass('shipped_host_compliant')}
-              onFail={() => handleFail('shipped_host_compliant')}
-            />
-          </div>
-        </div>
-
-        {/* Early Reject on Disallowed Host */}
+        {/* Early Reject Button on Host Violation */}
         {isProhibitedHost && onEarlyExit && (
           <div className="p-3.5 rounded-xl bg-rose-950/50 border border-rose-500/50 flex items-center justify-between gap-3">
             <div className="flex items-center gap-2 text-rose-200 text-xs">
               <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
               <span>
-                Instant GitBook Blocker: Disallowed ephemeral host detected.
+                Instant Blocker: Ephemeral host violates GitBook rules.
               </span>
             </div>
             <button
               type="button"
-              onClick={() => onEarlyExit(`Disallowed Host: ${prohibitedReason}`)}
+              onClick={() => onEarlyExit(`Disallowed Ephemeral Host: ${prohibitedReason}`)}
               className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold transition-colors shrink-0 shadow-sm cursor-pointer"
             >
-              Reject: Disallowed Host
+              Reject for Disallowed Host
             </button>
           </div>
         )}
       </div>
 
-      {/* FULL-WIDTH INTERACTIVE TESTING CONTAINER */}
+      {/* FULL-WIDTH INTERACTIVE TESTING CONTAINER (Auto-detects X-Frame-Options to avoid broken UI) */}
       <div className="bg-[#121214] border border-[#27272a] rounded-2xl flex flex-col overflow-hidden shadow-xl flex-1 min-h-[620px]">
         {/* Container Top Toolbar */}
         <div className="p-3.5 bg-[#18181b] border-b border-[#27272a] flex items-center justify-between">
@@ -318,7 +338,12 @@ export const PlayableDemoStage: React.FC<PlayableDemoStageProps> = ({
             <span className="text-xs font-bold uppercase tracking-wider text-white">
               Testing Environment
             </span>
-            {playableUrl && !isGitHubUrl && !isYouTube && (
+            {!frameCheck.canFrame && !isYouTube && !isDirectVideo && (
+              <span className="text-[11px] font-mono text-amber-300 bg-amber-950/60 border border-amber-500/40 px-2 py-0.5 rounded">
+                X-Frame-Options Protected (Opened in New Tab)
+              </span>
+            )}
+            {frameCheck.canFrame && playableUrl && !isGitHubUrl && !isYouTube && (
               <span className="text-[11px] font-mono text-[#a1a1aa] bg-[#27272a] px-2 py-0.5 rounded">
                 sandbox iframe
               </span>
@@ -326,7 +351,7 @@ export const PlayableDemoStage: React.FC<PlayableDemoStageProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
-            {!isGitHubUrl && !isYouTube && (
+            {!isGitHubUrl && !isYouTube && (frameCheck.canFrame || forceEmbed) && (
               <div className="flex items-center bg-[#27272a] rounded-lg p-0.5">
                 <button
                   type="button"
@@ -400,15 +425,75 @@ export const PlayableDemoStage: React.FC<PlayableDemoStageProps> = ({
                 className="w-full rounded-2xl border border-[#27272a] shadow-2xl max-h-[560px]"
               />
             </div>
+          ) : !frameCheck.canFrame && !forceEmbed && playableUrl && !isGitHubUrl ? (
+            /* AUTOMATICALLY DETECTED X-FRAME-OPTIONS DENIED CARD (No broken UI) */
+            <div className="p-8 text-center text-xs text-[#a1a1aa] space-y-5 max-w-xl mx-auto my-auto animate-in fade-in duration-200">
+              <div className="w-16 h-16 rounded-2xl bg-amber-950/40 border border-amber-500/40 flex items-center justify-center mx-auto text-amber-400 shadow-lg">
+                <ShieldAlert className="w-8 h-8" />
+              </div>
+
+              <div className="space-y-2">
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-950/60 border border-amber-500/40 text-amber-300 text-xs font-mono font-bold">
+                  <span>X-Frame-Options Protected</span>
+                </div>
+                <h3 className="text-lg font-bold text-white">
+                  Live Application Active in New Tab
+                </h3>
+                <p className="text-xs text-[#d4d4d8] leading-relaxed max-w-md mx-auto">
+                  This application server explicitly blocks embedding in iframes ({frameCheck.reason || 'X-Frame-Options: DENY / SAMEORIGIN'}). To prevent a broken UI, the cockpit automatically detected it and opened the live demo in a new browser tab.
+                </p>
+              </div>
+
+              <div className="p-4 rounded-xl bg-[#18181b] border border-[#27272a] text-left space-y-2.5">
+                <span className="font-semibold text-white block text-xs">Direct Link:</span>
+                <div className="flex items-center justify-between gap-2 p-2 rounded-lg bg-[#121214] border border-[#27272a]">
+                  <span className="font-mono text-brand-orange text-xs truncate">
+                    {playableUrl}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => copyUrl(playableUrl)}
+                    className="p-1 text-[#a1a1aa] hover:text-white rounded hover:bg-[#27272a] cursor-pointer shrink-0"
+                    title="Copy URL"
+                  >
+                    {copiedLink === playableUrl ? (
+                      <Check className="w-3 h-3 text-emerald-400" />
+                    ) : (
+                      <Copy className="w-3 h-3" />
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
+                <a
+                  href={playableUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-brand-orange hover:bg-orange-600 text-white font-bold text-xs inline-flex items-center justify-center gap-2 transition-all shadow-md cursor-pointer"
+                >
+                  <span>Re-Open Playable Application</span>
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </a>
+
+                <button
+                  type="button"
+                  onClick={() => setForceEmbed(true)}
+                  className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-[#18181b] hover:bg-[#27272a] border border-[#27272a] text-[#a1a1aa] hover:text-white text-xs font-semibold transition-colors cursor-pointer"
+                >
+                  Try iframe anyway
+                </button>
+              </div>
+            </div>
           ) : playableUrl && !isGitHubUrl ? (
-            /* Embedded Live Web Sandbox with Fallback Banner */
+            /* Embedded Live Web Sandbox with Fallback Bar */
             <div className="w-full flex-1 flex flex-col space-y-3 min-h-[500px]">
               {/* Fallback Banner */}
               <div className="px-4 py-2 rounded-xl bg-[#18181b] border border-[#27272a] text-xs text-[#a1a1aa] flex items-center justify-between shrink-0">
                 <span className="flex items-center gap-1.5">
                   <Globe className="w-3.5 h-3.5 text-brand-orange shrink-0" />
                   <span>
-                    If this application refuses to load due to <code className="text-[#e4e4e7] bg-[#27272a] px-1 py-0.5 rounded text-[11px]">X-Frame-Options: DENY</code>, click:
+                    Embedded Sandbox: If the demo appears blank, click:
                   </span>
                 </span>
                 <a
@@ -417,7 +502,7 @@ export const PlayableDemoStage: React.FC<PlayableDemoStageProps> = ({
                   rel="noreferrer"
                   className="text-xs font-bold text-brand-orange hover:underline inline-flex items-center gap-1 shrink-0 ml-2"
                 >
-                  <span>Open Playable Demo in New Tab</span>
+                  <span>Open in New Tab</span>
                   <ExternalLink className="w-3 h-3" />
                 </a>
               </div>
@@ -510,20 +595,18 @@ export const PlayableDemoStage: React.FC<PlayableDemoStageProps> = ({
       {/* Footer Navigation Bar */}
       <div className="pt-4 border-t border-border-subtle flex items-center justify-between shrink-0">
         <div className="flex items-center gap-3 text-xs">
-          {isPlayablePassed && isHostPassed ? (
+          {isPlayablePassed ? (
             <span className="text-emerald-400 font-semibold flex items-center gap-1.5">
               <CheckCircle2 className="w-4 h-4" />
-              <span>Playable Demo & Host Stability Verified</span>
+              <span>Playable Demo Verified</span>
             </span>
           ) : (
-            <span className="text-amber-400 font-semibold flex items-center gap-1.5">
+            <span className="text-rose-400 font-semibold flex items-center gap-1.5">
               <AlertTriangle className="w-4 h-4" />
               <span>
-                {!isPlayablePassed && !isHostPassed
-                  ? 'Playable demo and host stability require verification'
-                  : !isPlayablePassed
-                  ? 'Playable demo requires verification'
-                  : 'Host compliance flagged'}
+                {isProhibitedHost
+                  ? 'Playable demo failed due to prohibited ephemeral host'
+                  : 'Playable demo requires verification or is broken'}
               </span>
             </span>
           )}

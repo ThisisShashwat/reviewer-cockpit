@@ -30,11 +30,18 @@ const commitDetailCache = new Map<string, any>();
 
 let lastRateLimitInfo: { limit: number; remaining: number; reset: number } | null = null;
 
+export const DEFAULT_GITHUB_TOKEN =
+  (import.meta.env.VITE_GITHUB_TOKEN as string) || '';
+
 export function getGitHubToken(): string | null {
   if (typeof window !== 'undefined') {
-    return localStorage.getItem('HC_GITHUB_TOKEN') || null;
+    const stored = localStorage.getItem('HC_GITHUB_TOKEN');
+    if (stored && stored.trim().length > 0) {
+      return stored.trim();
+    }
+    return DEFAULT_GITHUB_TOKEN;
   }
-  return null;
+  return DEFAULT_GITHUB_TOKEN;
 }
 
 export function setGitHubToken(token: string | null) {
@@ -57,9 +64,43 @@ function getGitHubHeaders(): HeadersInit {
   };
   const token = getGitHubToken();
   if (token) {
-    headers['Authorization'] = `token ${token}`;
+    headers['Authorization'] = `Bearer ${token}`;
   }
   return headers;
+}
+
+/**
+ * Checks if a URL can be embedded in an iframe or if X-Frame-Options/CSP blocks it
+ */
+export async function checkUrlFrameable(url: string): Promise<{ canFrame: boolean; reason?: string }> {
+  if (!url || !url.startsWith('http')) {
+    return { canFrame: false, reason: 'Invalid or missing URL' };
+  }
+
+  const lower = url.toLowerCase();
+  if (
+    lower.includes('github.com') ||
+    lower.includes('gitlab.com') ||
+    lower.includes('bitbucket.org') ||
+    lower.includes('notion.site') ||
+    lower.includes('medium.com') ||
+    lower.includes('twitter.com') ||
+    lower.includes('x.com')
+  ) {
+    return { canFrame: false, reason: 'Host blocks iframe embedding' };
+  }
+
+  try {
+    const res = await fetch(`/api/proxy/check-frame?url=${encodeURIComponent(url)}`);
+    if (res.ok) {
+      const data = await res.json();
+      return data;
+    }
+  } catch {
+    // If backend unreachable, allow sandbox attempt
+  }
+
+  return { canFrame: true };
 }
 
 function updateRateLimit(res: Response) {

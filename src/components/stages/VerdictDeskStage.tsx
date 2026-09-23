@@ -9,6 +9,7 @@ import {
   XCircle,
   AlertTriangle,
   RefreshCw,
+  Bot,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { CockpitProject, VerdictDetails } from '../../lib/types';
@@ -105,6 +106,19 @@ export const VerdictDeskStage: React.FC<VerdictDeskStageProps> = ({
     );
     toast.success('Inserted failed requirements into justification template');
   };
+
+  const handleApplyAiDeflation = () => {
+    const half = Math.round((project.submittedHours * 0.5) * 10) / 10;
+    setDeflatedHours(half);
+    setApprovedHours(Math.max(0, project.submittedHours - half));
+    const aiNote = 'Deducted 50% claimed hours due to heavy unedited AI generation / prompt dumps per YSWS guidelines.';
+    if (!justification.includes('AI generation')) {
+      setJustification((prev) => prev ? `${prev}\n\n${aiNote}` : aiNote);
+    }
+    toast.success(`Applied 50% AI deflation (-${half} hrs)`);
+  };
+
+  const isAiFlagged = reviewChecklist['flag_ai_generated'] === true;
 
   const handleSubmitVerdict = async () => {
     setIsSubmitting(true);
@@ -207,6 +221,34 @@ export const VerdictDeskStage: React.FC<VerdictDeskStageProps> = ({
             <RefreshCw className="w-3.5 h-3.5" />
             <span>Auto-Populate Rejection Justification</span>
           </button>
+        </div>
+      )}
+
+      {/* AI-GENERATED CODE FLAGGED BANNER */}
+      {isAiFlagged && (
+        <div className="p-4 rounded-xl bg-amber-950/40 border border-amber-500/50 text-amber-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-lg shrink-0">
+          <div className="flex items-start gap-3">
+            <Bot className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+            <div className="text-xs space-y-1">
+              <span className="font-bold text-amber-300 block text-sm">
+                Flagged as AI-Generated Code / Prompt Dump
+              </span>
+              <p className="text-amber-200/90 leading-relaxed">
+                Reviewer marked this project as heavily AI-generated. Per YSWS guidelines, hours should be deflated or justified.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={handleApplyAiDeflation}
+              className="px-3.5 py-2 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold transition-colors shadow-sm cursor-pointer flex items-center gap-1.5"
+            >
+              <Bot className="w-3.5 h-3.5" />
+              <span>Apply 50% AI Deflation (-{Math.round(project.submittedHours * 0.5 * 10) / 10} hrs)</span>
+            </button>
+          </div>
         </div>
       )}
 

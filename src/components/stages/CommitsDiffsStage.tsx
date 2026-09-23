@@ -534,9 +534,29 @@ export const CommitsDiffsStage: React.FC<CommitsDiffsStageProps> = ({
             </span>
           </div>
 
-          <span className="text-[11px] font-mono text-[#a1a1aa]">
-            {classifiedCommits.length} total commits analyzed
-          </span>
+          <div className="flex items-center gap-2.5">
+            <button
+              type="button"
+              onClick={() => onToggleChecklist?.('flag_ai_generated')}
+              className={`px-3 py-1 rounded-lg border text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
+                reviewChecklist['flag_ai_generated']
+                  ? 'bg-amber-950/70 border-amber-500/70 text-amber-300 font-bold shadow-sm ring-1 ring-amber-500/40'
+                  : 'bg-[#18181b] border-[#27272a] text-[#a1a1aa] hover:text-white hover:border-[#3f3f46]'
+              }`}
+              title="Toggle AI-generated code flag for this submission"
+            >
+              <Bot className="w-3.5 h-3.5" />
+              <span>
+                {reviewChecklist['flag_ai_generated']
+                  ? 'Flagged: AI-Generated ✓'
+                  : 'Mark as AI-Generated'}
+              </span>
+            </button>
+
+            <span className="text-[11px] font-mono text-[#a1a1aa]">
+              {classifiedCommits.length} total commits analyzed
+            </span>
+          </div>
         </div>
 
         <ul className="text-xs space-y-1.5 text-[#d4d4d8] leading-relaxed">
