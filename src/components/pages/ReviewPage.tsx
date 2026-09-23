@@ -5,9 +5,9 @@ import {
   ChevronRight,
   Activity,
   Layers,
+  FileText,
   PlaySquare,
   GitCommit,
-  Cpu,
   ShieldCheck,
   Lock,
   Unlock,
@@ -23,19 +23,19 @@ import {
 import { ReviewSidebar } from '../layout/ReviewSidebar';
 import { HackatimeSanityStage } from '../stages/HackatimeSanityStage';
 import { ManifestDoubleDipStage } from '../stages/ManifestDoubleDipStage';
+import { ProjectReadmeStage } from '../stages/ProjectReadmeStage';
 import { ShippingDeliverablesStage } from '../stages/ShippingDeliverablesStage';
 import { CommitsDiffsStage } from '../stages/CommitsDiffsStage';
-import { AiQualityStage } from '../stages/AiQualityStage';
 import { VerdictDeskStage } from '../stages/VerdictDeskStage';
 
 export type ReviewStep = 0 | 1 | 2 | 3 | 4 | 5;
 
 const STEPS = [
-  { id: 0 as ReviewStep, label: '1. Sanity', title: 'Hackatime Velocity Sanity', icon: Activity },
-  { id: 1 as ReviewStep, label: '2. Double-Dip', title: 'Manifest & Past Submissions', icon: Layers },
-  { id: 2 as ReviewStep, label: '3. Deliverables', title: 'Shipping & Playable Deliverable', icon: PlaySquare },
-  { id: 3 as ReviewStep, label: '4. Commits', title: 'Git History & Diffs', icon: GitCommit },
-  { id: 4 as ReviewStep, label: '5. AI & Quality', title: 'AI Heuristics & Documentation', icon: Cpu },
+  { id: 0 as ReviewStep, label: '1. Hackatime', title: 'Project-Specific Telemetry', icon: Activity },
+  { id: 1 as ReviewStep, label: '2. History', title: 'Live & Halceon Submissions', icon: Layers },
+  { id: 2 as ReviewStep, label: '3. README', title: 'URLs & README Verification', icon: FileText },
+  { id: 3 as ReviewStep, label: '4. Demo', title: 'Playable Deliverable Testing', icon: PlaySquare },
+  { id: 4 as ReviewStep, label: '5. Commits & AI', title: 'Git History & AI Heuristics', icon: GitCommit },
   { id: 5 as ReviewStep, label: '6. Verdict', title: 'Final Verdict Desk', icon: ShieldCheck },
 ];
 
@@ -264,7 +264,7 @@ export const ReviewPage: React.FC<ReviewPageProps> = ({
           )}
 
           {currentStep === 2 && (
-            <ShippingDeliverablesStage
+            <ProjectReadmeStage
               project={project}
               gitHubData={gitHubData}
               onAdvance={handleAdvance}
@@ -275,7 +275,7 @@ export const ReviewPage: React.FC<ReviewPageProps> = ({
           )}
 
           {currentStep === 3 && (
-            <CommitsDiffsStage
+            <ShippingDeliverablesStage
               project={project}
               gitHubData={gitHubData}
               onAdvance={handleAdvance}
@@ -286,7 +286,7 @@ export const ReviewPage: React.FC<ReviewPageProps> = ({
           )}
 
           {currentStep === 4 && (
-            <AiQualityStage
+            <CommitsDiffsStage
               project={project}
               gitHubData={gitHubData}
               onAdvance={handleAdvance}

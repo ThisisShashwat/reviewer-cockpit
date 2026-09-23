@@ -319,3 +319,95 @@ apiRouter.get("/audit", (req, res) => {
   const projectId = req.query.projectId as string | undefined;
   res.json(storage.getAuditLogs(projectId));
 });
+
+// -------------------------------------------------------------
+// 8. HALCEON / BONKED USER SUBMISSIONS LOOKUP
+// -------------------------------------------------------------
+apiRouter.get("/halceon/:username", async (req, res) => {
+  const username = String(req.params.username || "").trim();
+  if (!username) {
+    res.status(400).json({ error: "Username is required" });
+    return;
+  }
+
+  const url = `https://lin6bu84s73ya069zkua89ny.halceon.dev/u?q=${encodeURIComponent(username)}`;
+
+  try {
+    const upstream = await fetch(url, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      },
+    });
+
+    if (!upstream.ok) {
+      res.json({
+        username,
+        totalShips: 0,
+        totalHours: 0,
+        ships: [],
+        halceonUrl: url,
+      });
+      return;
+    }
+
+    const html = await upstream.text();
+
+    if (html.includes("No ships found for")) {
+      res.json({
+        username,
+        totalShips: 0,
+        totalHours: 0,
+        ships: [],
+        halceonUrl: url,
+      });
+      return;
+    }
+
+    const rowRegex = /<tr>\s*<td class="mono nowrap">(.*?)<\/td>\s*<td class="mono nowrap">(.*?)<\/td>\s*<td class="desc">(.*?)<\/td>\s*<td class="mono center">(\d+(?:\.\d+)?)<\/td>\s*<td class="mono center">.*?<\/td>\s*<td class="mono">.*?<\/td>\s*<td class="mono nowrap">(.*?)<\/td>\s*<td class="links nowrap">(.*?)<\/td>/gis;
+
+    const ships: Array<{
+      repo: string;
+      program: string;
+      description: string;
+      hours: number;
+      approvedAt: string;
+      links: string[];
+    }> = [];
+
+    let match;
+    while ((match = rowRegex.exec(html)) !== null) {
+      const rawRepo = match[1].replace(/<[^>]+>/g, "").replace(/\s+/g, "").trim();
+      const program = match[2].replace(/<[^>]+>/g, "").trim();
+      const desc = match[3]
+        .replace(/<summary>.*?<\/summary>/is, "")
+        .replace(/<[^>]+>/g, "")
+        .trim() || match[3].replace(/<[^>]+>/g, "").trim();
+      const hours = parseFloat(match[4]) || 0;
+      const approvedAt = match[5].replace(/<[^>]+>/g, "").trim();
+      const linksHtml = match[6];
+      const linkMatches = [...linksHtml.matchAll(/href="([^"]+)"/g)].map((m) => m[1]);
+
+      ships.push({
+        repo: rawRepo,
+        program,
+        description: desc,
+        hours,
+        approvedAt,
+        links: linkMatches,
+      });
+    }
+
+    const totalHours = Math.round(ships.reduce((sum, s) => sum + s.hours, 0) * 10) / 10;
+
+    res.json({
+      username,
+      totalShips: ships.length,
+      totalHours,
+      ships,
+      halceonUrl: url,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message, halceonUrl: url });
+  }
+});
+

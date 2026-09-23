@@ -12,6 +12,7 @@ import {
   CockpitProject,
   GitHubRepoData,
   HackatimeProjectStats,
+  HalceonProfileData,
   ManifestLookupData,
   PreapprovedExportItem,
   QueueStats,
@@ -213,30 +214,31 @@ export async function fetchGitHubRepoData(codeUrl: string): Promise<Partial<GitH
 }
 
 /**
- * Fetches Hackatime public user stats and projects
+ * Fetches Hackatime public user stats and projects.
+ * Supports project-specific filtering via filter_by_project query param.
  */
-export async function fetchHackatimeData(hackatimeId: string): Promise<Partial<HackatimeProjectStats>> {
+export async function fetchHackatimeData(
+  hackatimeId: string,
+  projectName?: string
+): Promise<Partial<HackatimeProjectStats>> {
   if (!hackatimeId || !hackatimeId.trim()) {
     return {
       isLoading: false,
-      error: 'No Hackatime ID provided'
+      isProjectFound: false,
+      error: 'No Hackatime ID provided',
     };
   }
 
   const cleanId = hackatimeId.trim();
+  const cleanProj = (projectName || '').replace(/\s*\([^)]*\)/g, '').trim();
 
   try {
-    // 1. Fetch User Stats
-    const statsRes = await fetch(`https://hackatime.hackclub.com/api/v1/users/${cleanId}/stats`);
-    let statsData: any = null;
-    if (statsRes.ok) {
-      statsData = await statsRes.json();
-    }
-
-    // 2. Fetch User Projects
+    // 1. Fetch User Projects list
     let projects: string[] = [];
     try {
-      const projectsRes = await fetch(`https://hackatime.hackclub.com/api/v1/users/${cleanId}/projects`);
+      const projectsRes = await fetch(
+        `https://hackatime.hackclub.com/api/v1/users/${cleanId}/projects`
+      );
       if (projectsRes.ok) {
         const projJson = await projectsRes.json();
         projects = projJson.projects || [];
@@ -245,26 +247,129 @@ export async function fetchHackatimeData(hackatimeId: string): Promise<Partial<H
       // Projects fetch non-fatal
     }
 
-    const d = statsData?.data || {};
+    // 2. Fetch Lifetime User Stats
+    let lifetimeStatsData: any = null;
+    try {
+      const statsRes = await fetch(
+        `https://hackatime.hackclub.com/api/v1/users/${cleanId}/stats`
+      );
+      if (statsRes.ok) {
+        lifetimeStatsData = await statsRes.json();
+      }
+    } catch {
+      // stats fetch non-fatal
+    }
+
+    // 3. If cleanProj is provided, fetch project-specific stats
+    let projectStatsData: any = null;
+    if (cleanProj) {
+      try {
+        const projRes = await fetch(
+          `https://hackatime.hackclub.com/api/v1/users/${cleanId}/stats?filter_by_project=${encodeURIComponent(
+            cleanProj
+          )}`
+        );
+        if (projRes.ok) {
+          projectStatsData = await projRes.json();
+        }
+      } catch {
+        // project specific stats fetch non-fatal
+      }
+    }
+
+    const lifeData = lifetimeStatsData?.data || {};
+    const projData = projectStatsData?.data || null;
+
+    const isProjectFound =
+      Boolean(cleanProj) &&
+      projects.some(
+        (p) =>
+          p.toLowerCase() === cleanProj.toLowerCase() ||
+          p.toLowerCase().includes(cleanProj.toLowerCase()) ||
+          cleanProj.toLowerCase().includes(p.toLowerCase())
+      );
+
+    // Languages: prefer project-specific languages if available, else lifetime
+    const activeLanguages = (projData?.languages || lifeData?.languages || []).map((l: any) => ({
+      name: l.name,
+      text: l.text,
+      hours: l.hours,
+      percent: l.percent,
+      color: l.color,
+    }));
+
+    const lifetimeLanguages = (lifeData?.languages || []).map((l: any) => ({
+      name: l.name,
+      text: l.text,
+      hours: l.hours,
+      percent: l.percent,
+      color: l.color,
+    }));
 
     return {
-      username: d.username || `User #${cleanId}`,
-      totalSeconds: d.total_seconds || 0,
-      totalHoursReadable: d.human_readable_total || '0h',
+      username: projData?.username || lifeData?.username || `User #${cleanId}`,
+      projectName: cleanProj,
+      projectHoursReadable: projData?.human_readable_total,
+      projectSeconds: projData?.total_seconds,
+      isProjectFound,
+      totalSeconds: lifeData?.total_seconds || 0,
+      totalHoursReadable: lifeData?.human_readable_total || '0h',
       projects,
-      languages: (d.languages || []).map((l: any) => ({
-        name: l.name,
-        text: l.text,
-        hours: l.hours,
-        percent: l.percent,
-        color: l.color
-      })),
-      isLoading: false
+      languages: activeLanguages,
+      lifetimeLanguages,
+      isLoading: false,
     };
   } catch (err: any) {
     return {
       isLoading: false,
-      error: err.message || 'Unable to connect to Hackatime API'
+      isProjectFound: false,
+      error: err.message || 'Unable to connect to Hackatime API',
+    };
+  }
+}
+
+/**
+ * Fetches user's full submission track record from Halceon / Unified / bonked
+ */
+export async function fetchHalceonProfile(username: string): Promise<HalceonProfileData> {
+  if (!username || !username.trim()) {
+    return {
+      username: '',
+      totalShips: 0,
+      totalHours: 0,
+      ships: [],
+      isLoading: false,
+    };
+  }
+
+  try {
+    const res = await fetch(`/api/halceon/${encodeURIComponent(username.trim())}`);
+    if (!res.ok) {
+      return {
+        username,
+        totalShips: 0,
+        totalHours: 0,
+        ships: [],
+        isLoading: false,
+        error: `Halceon server returned status ${res.status}`,
+      };
+    }
+    const data = await res.json();
+    return {
+      username: data.username || username,
+      totalShips: data.totalShips || 0,
+      totalHours: data.totalHours || 0,
+      ships: data.ships || [],
+      isLoading: false,
+    };
+  } catch (err: any) {
+    return {
+      username,
+      totalShips: 0,
+      totalHours: 0,
+      ships: [],
+      isLoading: false,
+      error: err.message || 'Failed to fetch Halceon profile',
     };
   }
 }

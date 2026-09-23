@@ -1,6 +1,9 @@
 import React, { useState } from 'react';
 import {
   AlertTriangle,
+  Bot,
+  CheckCircle2,
+  Cpu,
   ExternalLink,
   FileCode,
   GitCommit,
@@ -25,16 +28,37 @@ export const CommitsDiffsStage: React.FC<CommitsDiffsStageProps> = ({
   onToggleChecklist,
 }) => {
   const [selectedCommitSha, setSelectedCommitSha] = useState<string | null>(null);
-  const [diffViewMode, setDiffViewMode] = useState<'split' | 'unified'>('unified');
+  const [activeInspectorTab, setActiveInspectorTab] = useState<'files' | 'ai'>('files');
   const [flagNote, setFlagNote] = useState('');
   const [isFlagging, setIsFlagging] = useState(false);
 
   const commits = gitHubData?.commits || [];
+  const files = gitHubData?.files || [];
   const totalAdditions = commits.reduce((acc, c) => acc + (c.additions || 0), 0);
   const totalDeletions = commits.reduce((acc, c) => acc + (c.deletions || 0), 0);
 
   const isSingleCommitDump = commits.length === 1 && totalAdditions > 3000;
   const selectedCommit = commits.find((c) => c.sha === selectedCommitSha) || commits[0];
+
+  // AI Heuristic checks
+  const aiIndicatorFiles = files.filter((f) =>
+    ['.cursorrules', '.claude', 'copilot', 'devin', 'prompts'].some((kw) =>
+      f.name.toLowerCase().includes(kw)
+    )
+  );
+
+  const genericAiMessages = commits.filter((c) =>
+    [
+      'initial commit',
+      'create complete',
+      'added all',
+      'feat: complete project',
+      'full architecture',
+      'implemented application',
+    ].some((pattern) => c.message.toLowerCase().includes(pattern))
+  );
+
+  const hasAiIndicators = aiIndicatorFiles.length > 0 || genericAiMessages.length >= 2;
 
   const handleCheckbox = (key: string) => {
     if (onToggleChecklist) {
@@ -49,27 +73,28 @@ export const CommitsDiffsStage: React.FC<CommitsDiffsStageProps> = ({
         <div>
           <div className="flex items-center gap-2">
             <span className="text-xs font-mono font-bold uppercase tracking-wider text-brand-orange bg-brand-orange/10 px-2 py-0.5 rounded border border-brand-orange/20">
-              Stage 3 of 5
+              Stage 4 of 5
             </span>
-            <span className="text-xs text-content-tertiary">Git & Code Audit</span>
+            <span className="text-xs text-content-tertiary">Code History & Integrity Audit</span>
           </div>
           <h2 className="text-lg font-bold text-content-primary mt-1 font-heading">
-            Git Commit Progression & Differential Inspection
+            Git Commits Progression & AI Heuristics
           </h2>
           <p className="text-xs text-content-tertiary mt-1 max-w-2xl">
-            Confirm authentic incremental commit progression and inspect modified files to identify pre-made templates or copied starter packages.
+            Confirm authentic incremental development progression across commits, inspect changed files, and evaluate AI generation signals.
           </p>
         </div>
 
         <div className="flex items-center gap-3 shrink-0">
-          <div className="flex items-center gap-2 text-xs font-mono">
-            <span className="px-2.5 py-1 rounded-md bg-emerald-50 border border-emerald-200 text-semantic-success font-semibold">
-              +{totalAdditions.toLocaleString()} lines
+          {hasAiIndicators ? (
+            <span className="px-3 py-1 rounded-full text-xs font-semibold bg-amber-50 border border-amber-200 text-amber-700 flex items-center gap-1.5">
+              <Bot className="w-3.5 h-3.5" /> AI Signals Present
             </span>
-            <span className="px-2.5 py-1 rounded-md bg-red-50 border border-red-200 text-semantic-danger font-semibold">
-              -{totalDeletions.toLocaleString()} lines
+          ) : (
+            <span className="px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 border border-emerald-200 text-semantic-success flex items-center gap-1.5">
+              <CheckCircle2 className="w-3.5 h-3.5" /> Organic Code Patterns
             </span>
-          </div>
+          )}
 
           <a
             href={`${project.codeUrl}/commits`}
@@ -83,7 +108,7 @@ export const CommitsDiffsStage: React.FC<CommitsDiffsStageProps> = ({
         </div>
       </div>
 
-      {/* Single Commit Dump Notice */}
+      {/* Warnings & Notices */}
       {isSingleCommitDump && (
         <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 flex items-start gap-3 shrink-0">
           <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
@@ -107,9 +132,10 @@ export const CommitsDiffsStage: React.FC<CommitsDiffsStageProps> = ({
               <GitCommit className="w-4 h-4 text-brand-orange" />
               Commit Timeline ({commits.length})
             </span>
-            <span className="text-[11px] font-mono text-content-tertiary">
-              Click commit to inspect
-            </span>
+            <div className="flex items-center gap-1.5 font-mono text-[11px]">
+              <span className="text-semantic-success font-semibold">+{totalAdditions}</span>
+              <span className="text-semantic-danger font-semibold">-{totalDeletions}</span>
+            </div>
           </div>
 
           <div className="flex-1 overflow-y-auto divide-y divide-border-subtle">
@@ -124,7 +150,10 @@ export const CommitsDiffsStage: React.FC<CommitsDiffsStageProps> = ({
                   <button
                     key={c.sha}
                     type="button"
-                    onClick={() => setSelectedCommitSha(c.sha)}
+                    onClick={() => {
+                      setSelectedCommitSha(c.sha);
+                      setActiveInspectorTab('files');
+                    }}
                     className={`w-full text-left p-3.5 transition-colors block ${
                       isSelected
                         ? 'bg-canvas-hover border-l-2 border-l-brand-orange'
@@ -157,48 +186,66 @@ export const CommitsDiffsStage: React.FC<CommitsDiffsStageProps> = ({
           </div>
         </div>
 
-        {/* Right column: Selected Commit Inspector */}
+        {/* Right column: Inspector with Files & AI Heuristics Tabs */}
         <div className="lg:col-span-7 bg-canvas-card border border-border-subtle rounded-xl flex flex-col overflow-hidden shadow-sm">
-          {selectedCommit ? (
-            <>
-              <div className="p-3.5 bg-canvas-subtle border-b border-border-subtle flex items-center justify-between">
-                <div className="min-w-0 pr-2">
-                  <span className="text-xs font-bold font-mono text-content-primary block truncate">
-                    Commit {selectedCommit.shortSha}: {selectedCommit.message}
-                  </span>
-                  <span className="text-[11px] text-content-tertiary">
-                    {selectedCommit.author} committed on {selectedCommit.date ? new Date(selectedCommit.date).toLocaleString() : 'unknown date'}
-                  </span>
-                </div>
-                <div className="flex items-center gap-1 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => setDiffViewMode(diffViewMode === 'unified' ? 'split' : 'unified')}
-                    className="px-2 py-1 rounded bg-canvas-card border border-border-subtle text-[11px] font-mono text-content-secondary hover:text-content-primary"
-                  >
-                    {diffViewMode === 'unified' ? 'Unified' : 'Split'}
-                  </button>
-                  <a
-                    href={selectedCommit.htmlUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="p-1 text-content-tertiary hover:text-content-primary"
-                    title="Open on GitHub"
-                  >
-                    <ExternalLink className="w-3.5 h-3.5" />
-                  </a>
-                </div>
-              </div>
+          <div className="p-3 bg-canvas-subtle border-b border-border-subtle flex items-center justify-between">
+            <div className="flex items-center bg-canvas-card border border-border-subtle rounded-lg p-0.5 text-xs font-medium">
+              <button
+                type="button"
+                onClick={() => setActiveInspectorTab('files')}
+                className={`px-3 py-1 rounded-md transition-all ${
+                  activeInspectorTab === 'files'
+                    ? 'bg-canvas-subtle text-content-primary font-semibold shadow-sm'
+                    : 'text-content-tertiary hover:text-content-primary'
+                }`}
+              >
+                Changed Files ({selectedCommit?.files?.length || 0})
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveInspectorTab('ai')}
+                className={`px-3 py-1 rounded-md transition-all flex items-center gap-1 ${
+                  activeInspectorTab === 'ai'
+                    ? 'bg-canvas-subtle text-content-primary font-semibold shadow-sm'
+                    : 'text-content-tertiary hover:text-content-primary'
+                }`}
+              >
+                <Cpu className="w-3 h-3 text-brand-orange" />
+                <span>AI Signals</span>
+                {hasAiIndicators && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                )}
+              </button>
+            </div>
 
-              {/* Modified Files in Commit */}
-              <div className="flex-1 overflow-y-auto p-4 space-y-3">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-content-tertiary block">
-                  Files Changed ({selectedCommit.files?.length || 0})
-                </span>
+            {selectedCommit && (
+              <a
+                href={selectedCommit.htmlUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="text-xs text-content-secondary hover:text-brand-orange flex items-center gap-1 font-mono"
+              >
+                <span>Commit {selectedCommit.shortSha}</span>
+                <ExternalLink className="w-3 h-3" />
+              </a>
+            )}
+          </div>
 
-                {selectedCommit.files && selectedCommit.files.length > 0 ? (
-                  <div className="space-y-1.5">
-                    {selectedCommit.files.map((file: any, idx: number) => (
+          {activeInspectorTab === 'files' ? (
+            <div className="flex-1 overflow-y-auto p-4 space-y-2">
+              {selectedCommit ? (
+                <>
+                  <div className="pb-2 border-b border-border-subtle">
+                    <span className="text-xs font-semibold text-content-primary block">
+                      {selectedCommit.message}
+                    </span>
+                    <span className="text-[11px] text-content-tertiary">
+                      {selectedCommit.author} committed on {selectedCommit.date ? new Date(selectedCommit.date).toLocaleString() : ''}
+                    </span>
+                  </div>
+
+                  <div className="space-y-1.5 pt-1">
+                    {(selectedCommit.files || []).map((file: any, idx: number) => (
                       <div
                         key={idx}
                         className="flex items-center justify-between p-2 rounded-lg bg-canvas-subtle border border-border-subtle text-xs"
@@ -216,16 +263,42 @@ export const CommitsDiffsStage: React.FC<CommitsDiffsStageProps> = ({
                       </div>
                     ))}
                   </div>
-                ) : (
-                  <div className="text-xs text-content-tertiary py-4">
-                    Individual file list details unavailable for this commit.
-                  </div>
-                )}
-              </div>
-            </>
+                </>
+              ) : (
+                <div className="py-12 text-center text-xs text-content-tertiary">
+                  Select a commit from the timeline on the left to inspect changed files.
+                </div>
+              )}
+            </div>
           ) : (
-            <div className="flex-1 flex items-center justify-center text-xs text-content-tertiary">
-              Select a commit from the timeline on the left to inspect changed files.
+            <div className="flex-1 overflow-y-auto p-5 space-y-4">
+              <div className="space-y-2">
+                <span className="text-xs font-bold uppercase tracking-wider text-content-primary block">
+                  AI & Scaffold Indicators
+                </span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                  <div className="p-3 rounded-lg bg-canvas-subtle border border-border-subtle">
+                    <span className="text-[11px] text-content-tertiary block">Assistant Config Files</span>
+                    <span className="font-semibold text-content-primary mt-1 block">
+                      {aiIndicatorFiles.length > 0
+                        ? aiIndicatorFiles.map((f) => f.name).join(', ')
+                        : 'None detected'}
+                    </span>
+                  </div>
+
+                  <div className="p-3 rounded-lg bg-canvas-subtle border border-border-subtle">
+                    <span className="text-[11px] text-content-tertiary block">Generic Commit Patterns</span>
+                    <span className="font-semibold text-content-primary mt-1 block">
+                      {genericAiMessages.length} of {commits.length} commits
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-3.5 rounded-lg bg-canvas-subtle border border-border-subtle text-xs text-content-secondary leading-relaxed">
+                <p className="font-semibold text-content-primary mb-1">GitBook AI Policy Guideline:</p>
+                Using AI assistants (Copilot, Cursor, Claude) is permitted provided the submitter actively guides and understands the architecture. If a project consists of an unrefined single-prompt scaffold without iterative debugging, apply deflation during final verdict.
+              </div>
             </div>
           )}
         </div>
@@ -240,24 +313,24 @@ export const CommitsDiffsStage: React.FC<CommitsDiffsStageProps> = ({
           <label className="flex items-center gap-2.5 cursor-pointer select-none p-2 rounded-lg hover:bg-canvas-hover transition-colors">
             <input
               type="checkbox"
-              checked={Boolean(reviewChecklist['stage3_incremental_commits'])}
-              onChange={() => handleCheckbox('stage3_incremental_commits')}
+              checked={Boolean(reviewChecklist['stage4_incremental_commits'])}
+              onChange={() => handleCheckbox('stage4_incremental_commits')}
               className="rounded border-border text-brand-orange focus:ring-brand-orange w-4 h-4"
             />
             <span className="text-content-secondary font-medium">
-              Code shows meaningful incremental commits rather than a single pre-built code dump
+              Commit log demonstrates meaningful iterative development rather than a single pre-made dump
             </span>
           </label>
 
           <label className="flex items-center gap-2.5 cursor-pointer select-none p-2 rounded-lg hover:bg-canvas-hover transition-colors">
             <input
               type="checkbox"
-              checked={Boolean(reviewChecklist['stage3_dates_match'])}
-              onChange={() => handleCheckbox('stage3_dates_match')}
+              checked={Boolean(reviewChecklist['stage4_understands_code'])}
+              onChange={() => handleCheckbox('stage4_understands_code')}
               className="rounded border-border text-brand-orange focus:ring-brand-orange w-4 h-4"
             />
             <span className="text-content-secondary font-medium">
-              Commit timestamps correspond with tracked Hackatime heartbeats
+              Code shows original implementation logic and is not unrefined single-prompt AI slop
             </span>
           </label>
         </div>
@@ -271,14 +344,14 @@ export const CommitsDiffsStage: React.FC<CommitsDiffsStageProps> = ({
               type="text"
               value={flagNote}
               onChange={(e) => setFlagNote(e.target.value)}
-              placeholder="Reason for git/commit concern..."
+              placeholder="Reason for code or AI concern..."
               className="text-xs px-3 py-1.5 rounded-lg border border-border bg-canvas-card text-content-primary flex-1 focus:outline-none focus:border-brand-orange"
             />
             <button
               type="button"
               onClick={() => {
                 if (onEarlyExit && flagNote.trim()) {
-                  onEarlyExit(`Git Concern: ${flagNote.trim()}`);
+                  onEarlyExit(`Code Concern: ${flagNote.trim()}`);
                 }
                 setIsFlagging(false);
               }}
@@ -301,7 +374,7 @@ export const CommitsDiffsStage: React.FC<CommitsDiffsStageProps> = ({
             className="px-3.5 py-2 rounded-lg bg-canvas-card border border-border-subtle text-xs font-semibold text-content-secondary hover:text-semantic-danger hover:border-semantic-dangerBorder transition-colors flex items-center gap-1.5 shadow-sm"
           >
             <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
-            <span>Flag Git Anomaly</span>
+            <span>Flag Code Anomaly</span>
           </button>
         )}
 
@@ -310,7 +383,7 @@ export const CommitsDiffsStage: React.FC<CommitsDiffsStageProps> = ({
           onClick={onAdvance}
           className="px-5 py-2 rounded-lg bg-brand-orange text-white hover:bg-orange-600 text-xs font-semibold transition-colors shadow-sm flex items-center gap-1.5"
         >
-          <span>Continue to AI & Quality →</span>
+          <span>Continue to Final Verdict Desk →</span>
         </button>
       </div>
     </div>

@@ -234,6 +234,10 @@ export interface GitHubRepoData {
 
 export interface HackatimeProjectStats {
   username: string;
+  projectName?: string;
+  projectHoursReadable?: string;
+  projectSeconds?: number;
+  isProjectFound: boolean;
   totalSeconds: number;
   totalHoursReadable: string;
   projects: string[];
@@ -244,6 +248,31 @@ export interface HackatimeProjectStats {
     percent: number;
     color?: string;
   }>;
+  lifetimeLanguages?: Array<{
+    name: string;
+    text: string;
+    hours: number;
+    percent: number;
+    color?: string;
+  }>;
+  isLoading: boolean;
+  error?: string;
+}
+
+export interface HalceonShip {
+  repo: string;
+  program: string;
+  description: string;
+  hours: number;
+  approvedAt: string;
+  links: string[];
+}
+
+export interface HalceonProfileData {
+  username: string;
+  totalShips: number;
+  totalHours: number;
+  ships: HalceonShip[];
   isLoading: boolean;
   error?: string;
 }
