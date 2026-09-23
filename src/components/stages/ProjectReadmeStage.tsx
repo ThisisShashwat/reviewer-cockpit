@@ -109,7 +109,7 @@ export const ProjectReadmeStage: React.FC<ProjectReadmeStageProps> = ({
         <div>
           <div className="flex items-center gap-2">
             <span className="text-xs font-mono font-bold uppercase tracking-wider text-brand-orange bg-brand-orange/10 px-2 py-0.5 rounded border border-brand-orange/20">
-              Stage 3 of 6
+              Stage 4 of 7
             </span>
             <span className="text-xs text-content-tertiary">Deliverable Overview & README</span>
           </div>
