@@ -14,6 +14,12 @@ import { PassFailControl } from '../common/PassFailControl';
 interface CommitsDiffsStageProps {
   project: CockpitProject;
   gitHubData?: Partial<GitHubRepoData>;
+  baselineArchiveCommit?: {
+    commitHash: string;
+    shortHash: string;
+    shipName: string;
+    archiveUrl: string;
+  };
   onAdvance: () => void;
   onEarlyExit?: (reason: string) => void;
   reviewChecklist?: Record<string, boolean>;
@@ -38,6 +44,7 @@ interface ClassifiedCommit {
 export const CommitsDiffsStage: React.FC<CommitsDiffsStageProps> = ({
   project,
   gitHubData,
+  baselineArchiveCommit,
   onAdvance,
   onEarlyExit,
   reviewChecklist = {},
@@ -136,6 +143,82 @@ export const CommitsDiffsStage: React.FC<CommitsDiffsStageProps> = ({
     const days = Math.round(diffHours / 24);
     return { text: `${days} day${days > 1 ? 's' : ''}`, isSpike: false };
   }, [classifiedCommits, totalAdditions]);
+
+  // Baseline Archive Commit index in current commit history
+  const baselineIndex = useMemo(() => {
+    if (!baselineArchiveCommit) return -1;
+    return classifiedCommits.findIndex(
+      (c) =>
+        c.sha.toLowerCase().startsWith(baselineArchiveCommit.shortHash.toLowerCase()) ||
+        baselineArchiveCommit.commitHash.toLowerCase().startsWith(c.sha.toLowerCase())
+    );
+  }, [classifiedCommits, baselineArchiveCommit]);
+
+  // File-wise aggregate metrics derived from commits
+  const fileWiseMetrics = useMemo(() => {
+    const map = new Map<
+      string,
+      {
+        filename: string;
+        additions: number;
+        deletions: number;
+        changes: number;
+        commitCount: number;
+        category: 'Code' | 'Markup' | 'Config' | 'Asset';
+      }
+    >();
+
+    for (const c of classifiedCommits) {
+      for (const f of c.files || []) {
+        if (!f.filename) continue;
+        const existing = map.get(f.filename) || {
+          filename: f.filename,
+          additions: 0,
+          deletions: 0,
+          changes: 0,
+          commitCount: 0,
+          category: 'Code' as const,
+        };
+
+        existing.additions += f.additions || 0;
+        existing.deletions += f.deletions || 0;
+        existing.changes += (f.additions || 0) + (f.deletions || 0);
+        existing.commitCount += 1;
+
+        const lower = f.filename.toLowerCase();
+        if (lower.endsWith('.md') || lower.endsWith('.txt') || lower.endsWith('.rst')) {
+          existing.category = 'Markup';
+        } else if (
+          lower.endsWith('.json') ||
+          lower.endsWith('.yaml') ||
+          lower.endsWith('.yml') ||
+          lower.endsWith('.toml') ||
+          lower.endsWith('.env') ||
+          lower.endsWith('.lock')
+        ) {
+          existing.category = 'Config';
+        } else if (
+          lower.endsWith('.png') ||
+          lower.endsWith('.jpg') ||
+          lower.endsWith('.jpeg') ||
+          lower.endsWith('.gif') ||
+          lower.endsWith('.svg') ||
+          lower.endsWith('.ico') ||
+          lower.endsWith('.mp3') ||
+          lower.endsWith('.mp4') ||
+          lower.endsWith('.wav')
+        ) {
+          existing.category = 'Asset';
+        } else {
+          existing.category = 'Code';
+        }
+
+        map.set(f.filename, existing);
+      }
+    }
+
+    return Array.from(map.values()).sort((a, b) => b.changes - a.changes);
+  }, [classifiedCommits]);
 
   // Overall AI Signal Evaluation across the entire repo
   const overallAiEvaluation = useMemo(() => {
@@ -253,6 +336,43 @@ export const CommitsDiffsStage: React.FC<CommitsDiffsStageProps> = ({
           </a>
         </div>
       </div>
+
+      {/* Prior Approved Archive Baseline Flag Banner */}
+      {baselineArchiveCommit && (
+        <div className="p-4 rounded-xl bg-purple-950/40 border border-purple-500/50 text-white space-y-2.5 shadow-xl shrink-0">
+          <div className="flex items-start justify-between gap-4">
+            <div className="space-y-1">
+              <span className="text-xs font-mono font-bold uppercase tracking-wider text-purple-300 bg-purple-500/20 px-2 py-0.5 rounded border border-purple-500/30 inline-flex items-center gap-1.5">
+                <GitCommit className="w-3.5 h-3.5 text-purple-400" />
+                Prior Approved Baseline: {baselineArchiveCommit.shortHash}
+              </span>
+              <h3 className="text-sm font-bold text-white pt-1">
+                Double-Dip Boundary Established from Prior Ship &ldquo;{baselineArchiveCommit.shipName}&rdquo;
+              </h3>
+              <p className="text-xs text-purple-200/90 leading-relaxed">
+                Commits up to <code className="text-emerald-400 font-mono bg-black/40 px-1.5 py-0.5 rounded">{baselineArchiveCommit.shortHash}</code> were already reviewed and approved. <strong>DO NOT credit hours for commits up to this hash.</strong> Reviewers must strictly inspect the diff from <code className="text-emerald-400 font-mono bg-black/40 px-1.5 py-0.5 rounded">{baselineArchiveCommit.shortHash}...HEAD</code>.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <a
+                href={`${project.codeUrl}/compare/${baselineArchiveCommit.commitHash}...HEAD`}
+                target="_blank"
+                rel="noreferrer"
+                className="px-3 py-1.5 rounded-lg bg-brand-orange text-white hover:bg-orange-600 transition-colors text-xs font-semibold inline-flex items-center gap-1.5 shadow-sm cursor-pointer"
+              >
+                <span>Compare New Work ({baselineArchiveCommit.shortHash}...HEAD)</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </a>
+            </div>
+          </div>
+          {baselineIndex === 0 && (
+            <div className="p-2.5 rounded-lg bg-rose-950/60 border border-rose-500/40 text-rose-200 text-xs font-semibold flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+              <span>🚨 Critical Blocker: Repository HEAD is identical to the baseline archive commit ({baselineArchiveCommit.shortHash}). No new commits have been pushed since the prior approved ship!</span>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* GitHub Rate Limit Banner (Graceful fallback notice) */}
       {isRateLimited && (
@@ -417,24 +537,43 @@ export const CommitsDiffsStage: React.FC<CommitsDiffsStageProps> = ({
                 </p>
               </div>
             ) : (
-              classifiedCommits.map((c) => {
+              classifiedCommits.map((c, cIdx) => {
                 const isSelected = selectedCommit?.sha === c.sha;
+                const isBaseline = baselineIndex !== -1 && cIdx === baselineIndex;
+                const isHistorical = baselineIndex !== -1 && cIdx > baselineIndex;
+                const isPostBaseline = baselineIndex !== -1 && cIdx < baselineIndex;
+
                 return (
                   <button
                     key={c.sha}
                     type="button"
                     onClick={() => setSelectedCommitSha(c.sha)}
                     className={`w-full text-left p-3.5 transition-colors block cursor-pointer ${
+                      isHistorical ? 'opacity-60 bg-[#0e0e10]' : ''
+                    } ${
                       isSelected
                         ? 'bg-[#1e1e24] border-l-2 border-l-brand-orange'
                         : 'hover:bg-[#18181b]'
                     }`}
                   >
                     <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2 min-w-0">
+                      <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
                         <span className="text-xs font-mono font-bold text-white truncate">
                           {c.shortSha}
                         </span>
+                        {isBaseline ? (
+                          <span className="px-1.5 py-0.2 rounded text-[9px] font-mono uppercase font-bold bg-purple-950/80 text-purple-300 border border-purple-500/40">
+                            ARCHIVE BOUNDARY
+                          </span>
+                        ) : isPostBaseline ? (
+                          <span className="px-1.5 py-0.2 rounded text-[9px] font-mono uppercase font-bold bg-emerald-950/80 text-emerald-300 border border-emerald-500/40">
+                            NEW WORK
+                          </span>
+                        ) : isHistorical ? (
+                          <span className="px-1.5 py-0.2 rounded text-[9px] font-mono uppercase text-zinc-500 bg-zinc-900 border border-zinc-800">
+                            PRIOR SHIP
+                          </span>
+                        ) : null}
                         <span
                           className={`px-1.5 py-0.2 rounded text-[9px] font-mono uppercase font-bold ${
                             c.category === 'core'
@@ -531,11 +670,79 @@ export const CommitsDiffsStage: React.FC<CommitsDiffsStageProps> = ({
         </div>
       </div>
 
+      {/* File-Wise Aggregate Metrics Table */}
+      {fileWiseMetrics.length > 0 && (
+        <div className="p-5 rounded-2xl bg-[#121214] border border-[#27272a] text-white space-y-3.5 shadow-lg shrink-0">
+          <div className="flex items-center justify-between border-b border-[#27272a] pb-3">
+            <div className="flex items-center gap-2">
+              <FileCode className="w-4 h-4 text-brand-orange" />
+              <h3 className="text-xs font-bold uppercase tracking-wider text-white">
+                File-Wise Code Churn & Frequency Metrics ({fileWiseMetrics.length} files modified)
+              </h3>
+            </div>
+            <span className="text-[11px] text-[#a1a1aa] font-mono">
+              Sorted by net code changes (additions + deletions)
+            </span>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="border-b border-[#27272a] text-[11px] text-[#a1a1aa] font-mono">
+                  <th className="pb-2 font-semibold">File Path</th>
+                  <th className="pb-2 font-semibold">Category</th>
+                  <th className="pb-2 font-semibold text-center">Commits Touching</th>
+                  <th className="pb-2 font-semibold text-right">Additions</th>
+                  <th className="pb-2 font-semibold text-right">Deletions</th>
+                  <th className="pb-2 font-semibold text-right">Net Churn</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#1e1e24] font-mono">
+                {fileWiseMetrics.slice(0, 15).map((f, i) => (
+                  <tr key={i} className="hover:bg-[#18181b] transition-colors">
+                    <td className="py-2 pr-3 font-semibold text-white truncate max-w-xs" title={f.filename}>
+                      {f.filename}
+                    </td>
+                    <td className="py-2 pr-3">
+                      <span
+                        className={`px-1.5 py-0.5 rounded text-[10px] uppercase font-bold ${
+                          f.category === 'Code'
+                            ? 'bg-blue-950/60 text-blue-400 border border-blue-500/30'
+                            : f.category === 'Markup'
+                            ? 'bg-amber-950/60 text-amber-400 border border-amber-500/30'
+                            : f.category === 'Config'
+                            ? 'bg-purple-950/60 text-purple-400 border border-purple-500/30'
+                            : 'bg-zinc-800 text-zinc-400 border border-zinc-700'
+                        }`}
+                      >
+                        {f.category}
+                      </span>
+                    </td>
+                    <td className="py-2 px-3 text-center text-zinc-300">
+                      {f.commitCount} commit{f.commitCount !== 1 ? 's' : ''}
+                    </td>
+                    <td className="py-2 pl-3 text-right text-emerald-400 font-semibold">
+                      +{f.additions}
+                    </td>
+                    <td className="py-2 pl-3 text-right text-rose-400 font-semibold">
+                      -{f.deletions}
+                    </td>
+                    <td className="py-2 pl-3 text-right font-bold text-amber-300">
+                      {f.changes} lines
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {/* Interactive Reviewer Pass/Fail Checklist */}
       <div className="p-5 rounded-2xl bg-[#121214] border border-[#27272a] text-white space-y-3.5 shadow-lg shrink-0">
         <div className="flex items-center justify-between border-b border-[#27272a] pb-3">
           <h3 className="text-xs font-bold uppercase tracking-wider text-white">
-            Stage 5 Verification: Code Integrity & Progression Checks
+            Stage 6 Verification: Code Integrity & Progression Checks
           </h3>
           <span className="text-xs text-[#a1a1aa]">Select Pass or Fail for each criterion</span>
         </div>
