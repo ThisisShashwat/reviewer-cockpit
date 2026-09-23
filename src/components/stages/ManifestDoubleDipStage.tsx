@@ -267,7 +267,7 @@ export const ManifestDoubleDipStage: React.FC<ManifestDoubleDipStageProps> = ({
         <div>
           <div className="flex items-center gap-2">
             <span className="text-xs font-mono font-bold uppercase tracking-wider text-brand-orange bg-brand-orange/10 px-2 py-0.5 rounded border border-brand-orange/20">
-              Stage 1 of 5
+              Stage 1 of 6
             </span>
             <span className="text-xs text-content-tertiary">Cross-Program Audit</span>
           </div>

@@ -79,7 +79,7 @@ export const App: React.FC = () => {
       setActiveProjectId(projectParam);
       setCurrentPage('review');
       if (stepParam !== null && !isNaN(Number(stepParam))) {
-        const s = Math.max(0, Math.min(4, parseInt(stepParam, 10))) as ReviewStep;
+        const s = Math.max(0, Math.min(5, parseInt(stepParam, 10))) as ReviewStep;
         setActiveStep(s);
       }
     } else if (pageParam === 'admin') {
@@ -101,7 +101,7 @@ export const App: React.FC = () => {
         setActiveProjectId(projectParam);
         setCurrentPage('review');
         if (stepParam !== null && !isNaN(Number(stepParam))) {
-          const s = Math.max(0, Math.min(4, parseInt(stepParam, 10))) as ReviewStep;
+          const s = Math.max(0, Math.min(5, parseInt(stepParam, 10))) as ReviewStep;
           setActiveStep(s);
         } else {
           setActiveStep(0);

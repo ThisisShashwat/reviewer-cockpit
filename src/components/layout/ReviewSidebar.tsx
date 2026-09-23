@@ -12,6 +12,7 @@ import {
 import { toast } from 'sonner';
 import { saveProjectNote } from '../../lib/api';
 import { AuditLogEntry, CockpitProject } from '../../lib/types';
+import { decodeHtmlEntities } from '../../lib/utils';
 
 interface ReviewSidebarProps {
   project: CockpitProject;
@@ -66,7 +67,7 @@ export const ReviewSidebar: React.FC<ReviewSidebarProps> = ({
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
             <h1 className="text-base font-bold text-white tracking-tight leading-snug truncate">
-              {project.projectName}
+              {decodeHtmlEntities(project.projectName)}
             </h1>
             <div className="flex items-center gap-2 mt-1">
               <span className="text-xs text-[#a1a1aa] font-medium font-mono truncate">
@@ -94,20 +95,21 @@ export const ReviewSidebar: React.FC<ReviewSidebarProps> = ({
           </div>
         </div>
 
-        {/* Quick Links with Copy and Open */}
+        {/* Quick Links with Copy and Open (Supports up to 4+ Code, Demo, and Archive Links) */}
         <div className="space-y-1.5 pt-1">
-          {project.codeUrl && (
-            <div className="flex items-center justify-between p-2 rounded-lg bg-[#18181b] border border-[#27272a] text-xs">
+          {/* Primary & Additional Code Repositories */}
+          {(project.allCodeUrls && project.allCodeUrls.length > 0 ? project.allCodeUrls : [project.codeUrl].filter(Boolean)).map((cUrl, idx) => (
+            <div key={`code-${idx}`} className="flex items-center justify-between p-2 rounded-lg bg-[#18181b] border border-[#27272a] text-xs">
               <div className="flex items-center gap-1.5 min-w-0">
                 <FileCode className="w-3.5 h-3.5 text-[#a1a1aa] shrink-0" />
-                <span className="font-mono text-[#d4d4d8] truncate text-[11px]">
-                  {project.codeUrl.replace('https://github.com/', '')}
+                <span className="font-mono text-[#d4d4d8] truncate text-[11px]" title={cUrl}>
+                  {idx > 0 ? `Repo ${idx + 1}: ` : ''}{cUrl.replace('https://github.com/', '')}
                 </span>
               </div>
               <div className="flex items-center gap-1 shrink-0 ml-1">
                 <button
                   type="button"
-                  onClick={() => copyUrl(project.codeUrl, 'code')}
+                  onClick={() => copyUrl(cUrl, 'code')}
                   className="p-1 text-[#a1a1aa] hover:text-white rounded hover:bg-[#27272a] cursor-pointer"
                   title="Copy Code URL"
                 >
@@ -118,7 +120,7 @@ export const ReviewSidebar: React.FC<ReviewSidebarProps> = ({
                   )}
                 </button>
                 <a
-                  href={project.codeUrl}
+                  href={cUrl}
                   target="_blank"
                   rel="noreferrer"
                   className="p-1 text-[#a1a1aa] hover:text-brand-orange rounded hover:bg-[#27272a]"
@@ -128,20 +130,21 @@ export const ReviewSidebar: React.FC<ReviewSidebarProps> = ({
                 </a>
               </div>
             </div>
-          )}
+          ))}
 
-          {project.playableUrl && (
-            <div className="flex items-center justify-between p-2 rounded-lg bg-[#18181b] border border-[#27272a] text-xs">
+          {/* Primary & Additional Playable / Demo Links */}
+          {(project.allPlayableUrls && project.allPlayableUrls.length > 0 ? project.allPlayableUrls : [project.playableUrl].filter(Boolean)).map((pUrl, idx) => (
+            <div key={`demo-${idx}`} className="flex items-center justify-between p-2 rounded-lg bg-[#18181b] border border-[#27272a] text-xs">
               <div className="flex items-center gap-1.5 min-w-0">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
-                <span className="font-mono text-[#d4d4d8] truncate text-[11px]">
-                  {project.playableUrl.replace(/^https?:\/\//, '')}
+                <span className="font-mono text-[#d4d4d8] truncate text-[11px]" title={pUrl}>
+                  {idx > 0 ? `Demo ${idx + 1}: ` : ''}{pUrl.replace(/^https?:\/\//, '')}
                 </span>
               </div>
               <div className="flex items-center gap-1 shrink-0 ml-1">
                 <button
                   type="button"
-                  onClick={() => copyUrl(project.playableUrl, 'demo')}
+                  onClick={() => copyUrl(pUrl, 'demo')}
                   className="p-1 text-[#a1a1aa] hover:text-white rounded hover:bg-[#27272a] cursor-pointer"
                   title="Copy Demo URL"
                 >
@@ -152,11 +155,34 @@ export const ReviewSidebar: React.FC<ReviewSidebarProps> = ({
                   )}
                 </button>
                 <a
-                  href={project.playableUrl}
+                  href={pUrl}
                   target="_blank"
                   rel="noreferrer"
                   className="p-1 text-[#a1a1aa] hover:text-brand-orange rounded hover:bg-[#27272a]"
                   title="Open Demo in New Tab"
+                >
+                  <ExternalLink className="w-3 h-3" />
+                </a>
+              </div>
+            </div>
+          ))}
+
+          {/* Archive URL if available */}
+          {project.archiveUrl && (
+            <div className="flex items-center justify-between p-2 rounded-lg bg-[#18181b] border border-[#27272a] text-xs">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
+                <span className="font-mono text-[#d4d4d8] truncate text-[11px]" title={project.archiveUrl}>
+                  Archive: {project.archiveUrl.replace(/^https?:\/\//, '')}
+                </span>
+              </div>
+              <div className="flex items-center gap-1 shrink-0 ml-1">
+                <a
+                  href={project.archiveUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="p-1 text-[#a1a1aa] hover:text-brand-orange rounded hover:bg-[#27272a]"
+                  title="Open Archive Baseline"
                 >
                   <ExternalLink className="w-3 h-3" />
                 </a>

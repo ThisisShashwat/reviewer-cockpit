@@ -1,14 +1,53 @@
 import { CockpitProject, CockpitStatus, ProjectType, RawLiveSubmissionDump } from "./types.js";
 
+function decodeHtml(str: string): string {
+  if (!str) return "";
+  return str
+    .replace(/&#39;/g, "'")
+    .replace(/&apos;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&#x27;/g, "'")
+    .replace(/&#x2F;/g, '/')
+    .replace(/&nbsp;/g, ' ');
+}
+
+function extractAllUrls(val: any): string[] {
+  if (!val) return [];
+  if (Array.isArray(val)) {
+    return Array.from(
+      new Set(
+        val
+          .flatMap((item) => extractAllUrls(item))
+          .filter(Boolean)
+      )
+    );
+  }
+  if (typeof val === "string") {
+    const matches = val.match(/(https?:\/\/[^\s,;<>()[\]]+|www\.[^\s,;<>()[\]]+)/gi) || [];
+    const cleaned = matches.map((u) => {
+      let clean = u.replace(/[.,;:)\]]+$/, "");
+      if (!clean.startsWith("http://") && !clean.startsWith("https://")) {
+        clean = "https://" + clean;
+      }
+      return clean;
+    });
+    return Array.from(new Set(cleaned));
+  }
+  return [];
+}
+
 /**
  * Derives a human-friendly project name from codeUrl or description
  */
 function deriveProjectName(raw: any, codeUrl: string, description: string): string {
   if (raw.projectName && typeof raw.projectName === "string" && raw.projectName.trim()) {
-    return raw.projectName.trim();
+    return decodeHtml(raw.projectName.trim());
   }
   if (raw["Project Name"] && typeof raw["Project Name"] === "string" && raw["Project Name"].trim()) {
-    return raw["Project Name"].trim();
+    return decodeHtml(raw["Project Name"].trim());
   }
 
   // Try extracting repo name from GitHub URL
@@ -16,7 +55,7 @@ function deriveProjectName(raw: any, codeUrl: string, description: string): stri
     try {
       const match = codeUrl.match(/github\.com\/[^/]+\/([^/?#]+)/i);
       if (match && match[1]) {
-        return match[1].replace(/[-_]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+        return decodeHtml(match[1].replace(/[-_]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()));
       }
     } catch {
       // ignore
@@ -25,7 +64,7 @@ function deriveProjectName(raw: any, codeUrl: string, description: string): stri
 
   // Try first line of description
   if (description) {
-    const firstLine = description.split("\n")[0].trim();
+    const firstLine = decodeHtml(description.split("\n")[0].trim());
     if (firstLine.length > 0 && firstLine.length <= 40) {
       return firstLine;
     }
@@ -54,10 +93,7 @@ function normalizeLapseLinks(val: any): string[] {
   if (!val) return [];
   if (Array.isArray(val)) return val.map((s) => String(s).trim()).filter(Boolean);
   if (typeof val === "string") {
-    return val
-      .split(/[\n,]/)
-      .map((s) => s.trim())
-      .filter((s) => s.startsWith("http"));
+    return extractAllUrls(val);
   }
   return [];
 }
@@ -73,15 +109,29 @@ export function normalizeLiveSubmission(
 
   // Resolve values across fields dictionary or flattened properties
   const id = String(raw.id || fields.id || "").trim();
-  const codeUrl = String(
-    raw.codeUrl || fields["Code URL"] || fields.codeUrl || ""
-  ).trim();
-  const playableUrl = String(
-    raw.playableUrl || fields["Playable URL"] || fields.playableUrl || ""
-  ).trim();
-  const description = String(
+  const rawCodeVal = raw.codeUrl || fields["Code URL"] || fields.codeUrl || "";
+  const rawPlayableVal = raw.playableUrl || fields["Playable URL"] || fields.playableUrl || "";
+
+  const allCodeUrls = extractAllUrls(rawCodeVal);
+  const allPlayableUrls = extractAllUrls(rawPlayableVal);
+
+  const codeUrl = allCodeUrls[0] || String(rawCodeVal).trim();
+  const playableUrl = allPlayableUrls[0] || String(rawPlayableVal).trim();
+
+  const archiveUrl = String(
+    raw.archiveUrl ||
+      fields["Archive URL"] ||
+      fields["Archive Link"] ||
+      fields["Archive"] ||
+      fields["Archive commit"] ||
+      ""
+  ).trim() || undefined;
+
+  const rawDescription = String(
     raw.description || fields["Description"] || fields.description || ""
   ).trim();
+  const description = decodeHtml(rawDescription);
+
   const githubUsername = String(
     raw.githubUsername || fields["GitHub Username"] || fields.githubUsername || ""
   ).trim();
@@ -94,23 +144,23 @@ export function normalizeLiveSubmission(
   );
   const submittedHours = Number.isFinite(overrideHours) && overrideHours >= 0 ? overrideHours : 0;
   
-  const overrideHoursJustification = String(
+  const overrideHoursJustification = decodeHtml(String(
     raw.overrideHoursJustification ||
       fields["Optional - Override Hours Spent Justification"] ||
       fields.overrideHoursJustification ||
       ""
-  ).trim() || undefined;
+  ).trim()) || undefined;
 
   const hackatimeId = String(
     raw.hackatimeId || fields["Justification - Submitter Hackatime ID"] || fields.hackatimeId || ""
   ).trim() || undefined;
 
-  const hackatimeProjects = String(
+  const hackatimeProjects = decodeHtml(String(
     raw.hackatimeProjects ||
       fields["Justification - Hackatime Project Name(s) + Date Range(s)"] ||
       fields.hackatimeProjects ||
       ""
-  ).trim() || undefined;
+  ).trim()) || undefined;
 
   const lapseLinks = normalizeLapseLinks(
     raw.lapseLinks ?? fields["Justification - Lapse Links, comma-separated"] ?? fields.lapseLinks
@@ -186,7 +236,10 @@ export function normalizeLiveSubmission(
     projectName,
     projectType,
     codeUrl,
+    allCodeUrls: allCodeUrls.length > 0 ? allCodeUrls : [codeUrl].filter(Boolean),
     playableUrl,
+    allPlayableUrls: allPlayableUrls.length > 0 ? allPlayableUrls : [playableUrl].filter(Boolean),
+    archiveUrl,
     description,
     githubUsername,
     screenshotUrl: screenshotUrl || existing?.screenshotUrl,

@@ -6,6 +6,7 @@ import {
   Activity,
   Layers,
   FileText,
+  Globe,
   GitCommit,
   ShieldCheck,
   Lock,
@@ -25,18 +26,20 @@ import { GitHubTokenModal } from '../common/GitHubTokenModal';
 import { ReviewSidebar } from '../layout/ReviewSidebar';
 import { ManifestDoubleDipStage } from '../stages/ManifestDoubleDipStage';
 import { ReadmeDeliverablesStage } from '../stages/ReadmeDeliverablesStage';
+import { PlayableDemoStage } from '../stages/PlayableDemoStage';
 import { TelemetryIntrospectStage } from '../stages/TelemetryIntrospectStage';
 import { CommitsDiffsStage } from '../stages/CommitsDiffsStage';
 import { VerdictDeskStage } from '../stages/VerdictDeskStage';
 
-export type ReviewStep = 0 | 1 | 2 | 3 | 4;
+export type ReviewStep = 0 | 1 | 2 | 3 | 4 | 5;
 
 const STEPS = [
   { id: 0 as ReviewStep, label: '1. History', title: 'Prior Ships & Double-Dip', icon: Layers },
-  { id: 1 as ReviewStep, label: '2. Readme & Deliverables', title: 'Shipped Checks & README', icon: FileText },
-  { id: 2 as ReviewStep, label: '3. Telemetry & Introspect', title: 'Telemetry & Coding Timeline', icon: Activity },
-  { id: 3 as ReviewStep, label: '4. Commits & AI', title: 'Git History, Churn & AI Forensics', icon: GitCommit },
-  { id: 4 as ReviewStep, label: '5. Verdict', title: 'Final Verdict Desk', icon: ShieldCheck },
+  { id: 1 as ReviewStep, label: '2. README & Info', title: 'Deliverables, Screenshot & README', icon: FileText },
+  { id: 2 as ReviewStep, label: '3. Playable Demo', title: 'Playable Testing & Host Stability', icon: Globe },
+  { id: 3 as ReviewStep, label: '4. Telemetry', title: 'Telemetry & Coding Timeline', icon: Activity },
+  { id: 4 as ReviewStep, label: '5. Commits & AI', title: 'Git History, Churn & AI Forensics', icon: GitCommit },
+  { id: 5 as ReviewStep, label: '6. Verdict', title: 'Final Verdict Desk', icon: ShieldCheck },
 ];
 
 interface ReviewPageProps {
@@ -92,13 +95,18 @@ export const ReviewPage: React.FC<ReviewPageProps> = ({
     onStepChange?.(step);
   };
 
-  // Reset to initialStep or Step 0 when switching projects
+  // Reset checklist and baseline ONLY when switching projects (project.id changes)
   useEffect(() => {
-    const s = initialStep ?? 0;
-    setCurrentStep(s);
     setReviewChecklist(project.cockpitVerdict?.appliedChecklist || {});
     setBaselineArchiveCommit(undefined);
-  }, [project.id, initialStep]);
+  }, [project.id]);
+
+  // Sync step if initialStep is passed or changes from parent
+  useEffect(() => {
+    if (initialStep !== undefined && initialStep !== currentStep) {
+      setCurrentStep(initialStep as ReviewStep);
+    }
+  }, [initialStep]);
 
   const toggleChecklist = (key: string, status?: boolean) => {
     setReviewChecklist((prev) => {
@@ -130,7 +138,7 @@ export const ReviewPage: React.FC<ReviewPageProps> = ({
         onPrevProject();
       } else {
         const num = parseInt(e.key, 10);
-        if (num >= 1 && num <= 5) {
+        if (num >= 1 && num <= 6) {
           handleStepSelect((num - 1) as ReviewStep);
         }
       }
@@ -141,7 +149,7 @@ export const ReviewPage: React.FC<ReviewPageProps> = ({
   }, [onBackToQueue, onNextProject, onPrevProject]);
 
   const handleAdvance = () => {
-    if (currentStep < 4) {
+    if (currentStep < 5) {
       const next = (currentStep + 1) as ReviewStep;
       handleStepSelect(next);
     }
@@ -149,7 +157,7 @@ export const ReviewPage: React.FC<ReviewPageProps> = ({
 
   const handleEarlyExit = (reason: string) => {
     toast.info(`Flag noted: ${reason}. Advanced to Final Verdict Desk.`);
-    handleStepSelect(4);
+    handleStepSelect(5);
   };
 
   return (
@@ -295,6 +303,17 @@ export const ReviewPage: React.FC<ReviewPageProps> = ({
           )}
 
           {currentStep === 2 && (
+            <PlayableDemoStage
+              project={project}
+              gitHubData={gitHubData}
+              onAdvance={handleAdvance}
+              onEarlyExit={handleEarlyExit}
+              reviewChecklist={reviewChecklist}
+              onToggleChecklist={toggleChecklist}
+            />
+          )}
+
+          {currentStep === 3 && (
             <TelemetryIntrospectStage
               project={project}
               onAdvance={handleAdvance}
@@ -304,7 +323,7 @@ export const ReviewPage: React.FC<ReviewPageProps> = ({
             />
           )}
 
-          {currentStep === 3 && (
+          {currentStep === 4 && (
             <CommitsDiffsStage
               project={project}
               gitHubData={gitHubData}
@@ -316,7 +335,7 @@ export const ReviewPage: React.FC<ReviewPageProps> = ({
             />
           )}
 
-          {currentStep === 4 && (
+          {currentStep === 5 && (
             <VerdictDeskStage
               project={project}
               verdict={verdict}

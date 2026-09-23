@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   CheckCircle2,
   Copy,
@@ -7,10 +7,13 @@ import {
   AlertCircle,
   Clock,
   XCircle,
+  AlertTriangle,
+  RefreshCw,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { CockpitProject, VerdictDetails } from '../../lib/types';
 import { submitCockpitVerdict } from '../../lib/api';
+import { decodeHtmlEntities } from '../../lib/utils';
 
 interface VerdictDeskStageProps {
   project: CockpitProject;
@@ -20,6 +23,27 @@ interface VerdictDeskStageProps {
   onOpenAdminDesk?: () => void;
 }
 
+const CHECKLIST_LABELS: Record<string, string> = {
+  // Stage 1 History & Double Dip
+  zero_progress_blocked: 'Zero Progress Double-Dip (Re-submission without substantial additions)',
+  prior_ships_reviewed: 'Prior Ships Double-Dip Audit',
+  // Stage 2 Deliverables
+  shipped_name_valid: 'Project Name (Missing or insufficient project title)',
+  shipped_code_valid: 'Source Code Repository (Missing or invalid GitHub repository URL)',
+  shipped_desc_valid: 'Project Description (Missing or insufficient project description)',
+  shipped_screenshot_valid: 'Deliverable Screenshot (Missing deliverable image screenshot)',
+  shipped_readme_valid: 'Repository README (Missing setup instructions or documentation)',
+  // Stage 3 Playable Demo
+  shipped_playable_valid: 'Playable Demo (Missing working playable demo, release binary, or video)',
+  shipped_host_compliant: 'Host Compliance (Prohibited ephemeral host: Streamlit / Replit / Drive)',
+  // Stage 4 Telemetry
+  telemetry_heartbeats_verified: 'Hackatime Telemetry (Missing or unverifiable coding heartbeats)',
+  telemetry_claim_justified: 'Submitted Hours Velocity (Excessive velocity or unplausible claimed hours)',
+  // Stage 5 Commits & AI
+  git_progression_verified: 'Git Commit Progression (Code dump or lack of incremental progress)',
+  code_churn_reviewed: 'AI Forensics & Code Churn (Excessive uninspected AI code churn)',
+};
+
 export const VerdictDeskStage: React.FC<VerdictDeskStageProps> = ({
   project,
   verdict,
@@ -27,29 +51,67 @@ export const VerdictDeskStage: React.FC<VerdictDeskStageProps> = ({
   onVerdictSubmitted,
   onOpenAdminDesk,
 }) => {
-  const [action, setAction] = useState<'pre_approve' | 'reject' | 'flag_fraud'>(
-    verdict?.action || 'pre_approve'
-  );
-  const [approvedHours, setApprovedHours] = useState<number>(
-    verdict?.approvedHours ?? project.submittedHours
-  );
+  const failedKeys = Object.entries(reviewChecklist)
+    .filter(([_, v]) => v === false)
+    .map(([k]) => k);
+
+  const passedCount = Object.values(reviewChecklist).filter((v) => v === true).length;
+  const failedCount = failedKeys.length;
+
+  const defaultAction = verdict?.action || (failedCount > 0 ? 'reject' : 'pre_approve');
+  const defaultApprovedHours =
+    verdict?.approvedHours ?? (failedCount > 0 ? 0 : project.submittedHours);
+
+  const generateDefaultJustification = () => {
+    if (verdict?.hoursJustification) return verdict.hoursJustification;
+    if (failedCount > 0) {
+      const items = failedKeys
+        .map((k) => `• ${CHECKLIST_LABELS[k] || k}`)
+        .join('\n');
+      return `Flagged for rejection per GitBook submission guidelines due to unmet criteria:\n${items}\n\nPlease update your deliverable or repository documentation and resubmit.`;
+    }
+    return `Verified ${decodeHtmlEntities(project.projectName)} delivers working software matching claimed velocity.`;
+  };
+
+  const [action, setAction] = useState<'pre_approve' | 'reject' | 'flag_fraud'>(defaultAction);
+  const [approvedHours, setApprovedHours] = useState<number>(defaultApprovedHours);
   const [deflatedHours, setDeflatedHours] = useState<number>(verdict?.deflatedHours ?? 0);
-  const [justification, setJustification] = useState<string>(
-    verdict?.hoursJustification ||
-      `Verified ${project.projectName} delivers working software matching claimed velocity.`
-  );
+  const [justification, setJustification] = useState<string>(generateDefaultJustification());
   const [internalNotes, setInternalNotes] = useState<string>(verdict?.internalNotes || '');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const passedCount = Object.values(reviewChecklist).filter((v) => v === true).length;
-  const failedCount = Object.values(reviewChecklist).filter((v) => v === false).length;
+  // If reviewer navigates here and there are failed checks, and no saved verdict existed, auto-flag rejection
+  useEffect(() => {
+    if (!verdict && failedCount > 0) {
+      setAction('reject');
+      setApprovedHours(0);
+      const items = failedKeys
+        .map((k) => `• ${CHECKLIST_LABELS[k] || k}`)
+        .join('\n');
+      setJustification(
+        `Flagged for rejection per GitBook submission guidelines due to unmet criteria:\n${items}\n\nPlease update your deliverable or repository documentation and resubmit.`
+      );
+    }
+  }, [failedCount, verdict]);
+
+  const handleApplyFailedToJustification = () => {
+    setAction('reject');
+    setApprovedHours(0);
+    const items = failedKeys
+      .map((k) => `• ${CHECKLIST_LABELS[k] || k}`)
+      .join('\n');
+    setJustification(
+      `Flagged for rejection per GitBook submission guidelines due to unmet criteria:\n${items}\n\nPlease update your deliverable or repository documentation and resubmit.`
+    );
+    toast.success('Inserted failed requirements into justification template');
+  };
 
   const handleSubmitVerdict = async () => {
     setIsSubmitting(true);
     try {
       const payload: VerdictDetails = {
         action,
-        approvedHours,
+        approvedHours: action === 'reject' || action === 'flag_fraud' ? 0 : approvedHours,
         deflatedHours,
         hoursJustification: justification.trim(),
         publicFeedback: justification.trim(),
@@ -62,7 +124,7 @@ export const VerdictDeskStage: React.FC<VerdictDeskStageProps> = ({
       const res = await submitCockpitVerdict({
         projectId: project.id,
         action,
-        approvedHours,
+        approvedHours: action === 'reject' || action === 'flag_fraud' ? 0 : approvedHours,
         deflatedHours,
         hoursJustification: justification.trim(),
         publicFeedback: justification.trim(),
@@ -76,8 +138,8 @@ export const VerdictDeskStage: React.FC<VerdictDeskStageProps> = ({
       }
       toast.success(
         action === 'pre_approve'
-          ? `Pre-approved ${approvedHours} hrs for ${project.projectName}`
-          : `Verdict submitted for ${project.projectName}`
+          ? `Pre-approved ${approvedHours} hrs for ${decodeHtmlEntities(project.projectName)}`
+          : `Verdict submitted for ${decodeHtmlEntities(project.projectName)}`
       );
     } catch {
       toast.error('Failed to submit verdict');
@@ -98,7 +160,7 @@ export const VerdictDeskStage: React.FC<VerdictDeskStageProps> = ({
         <div>
           <div className="flex items-center gap-2">
             <span className="text-xs font-mono font-bold uppercase tracking-wider text-brand-orange bg-brand-orange/10 px-2 py-0.5 rounded border border-brand-orange/20">
-              Stage 5 of 5
+              Stage 6 of 6
             </span>
             <span className="text-xs text-content-tertiary">Final Verdict Desk</span>
           </div>
@@ -106,7 +168,7 @@ export const VerdictDeskStage: React.FC<VerdictDeskStageProps> = ({
             Reviewer Technical Verdict & Hours Decision
           </h2>
           <p className="text-xs text-content-tertiary mt-1 max-w-2xl">
-            Synthesize the technical audit, set approved hours, record justification, and submit your technical recommendation.
+            Synthesize the technical audit across all stages, set approved hours, record justification, and submit your technical recommendation.
           </p>
         </div>
 
@@ -122,6 +184,32 @@ export const VerdictDeskStage: React.FC<VerdictDeskStageProps> = ({
         )}
       </div>
 
+      {/* FAILED CHECKS ALERT BANNER (If any criteria failed) */}
+      {failedCount > 0 && (
+        <div className="p-4 rounded-xl bg-rose-950/40 border border-rose-500/50 text-rose-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-lg shrink-0">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
+            <div className="text-xs space-y-1">
+              <span className="font-bold text-rose-300 block text-sm">
+                Unmet Requirements Flagged ({failedCount} failed checks)
+              </span>
+              <p className="text-rose-200/90 leading-relaxed">
+                {failedKeys.map((k) => CHECKLIST_LABELS[k] || k).join('; ')}
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleApplyFailedToJustification}
+            className="px-3.5 py-2 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition-colors shrink-0 shadow-sm flex items-center gap-1.5 cursor-pointer"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+            <span>Auto-Populate Rejection Justification</span>
+          </button>
+        </div>
+      )}
+
       {/* Review Checklist Summary Strip (Dark Console Card) */}
       <div className="p-4 rounded-xl bg-[#121214] border border-[#27272a] text-white flex items-center justify-between shadow-lg shrink-0">
         <div className="flex items-center gap-3">
@@ -133,7 +221,7 @@ export const VerdictDeskStage: React.FC<VerdictDeskStageProps> = ({
               Audit Checklist Synthesis
             </span>
             <span className="text-[11px] text-[#a1a1aa]">
-              Checked across Hackatime, History, Introspect, README, Deliverable, and Commits.
+              Checked across History, README, Deliverables, Telemetry, and Commits.
             </span>
           </div>
         </div>
@@ -160,7 +248,10 @@ export const VerdictDeskStage: React.FC<VerdictDeskStageProps> = ({
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <button
             type="button"
-            onClick={() => setAction('pre_approve')}
+            onClick={() => {
+              setAction('pre_approve');
+              if (approvedHours === 0) setApprovedHours(project.submittedHours);
+            }}
             className={`p-4 rounded-xl border text-left transition-all cursor-pointer ${
               action === 'pre_approve'
                 ? 'bg-emerald-950/40 border-emerald-500/50 ring-2 ring-emerald-500/20 text-white shadow-lg'
@@ -182,7 +273,10 @@ export const VerdictDeskStage: React.FC<VerdictDeskStageProps> = ({
 
           <button
             type="button"
-            onClick={() => setAction('reject')}
+            onClick={() => {
+              setAction('reject');
+              setApprovedHours(0);
+            }}
             className={`p-4 rounded-xl border text-left transition-all cursor-pointer ${
               action === 'reject'
                 ? 'bg-rose-950/40 border-rose-500/50 ring-2 ring-rose-500/20 text-white shadow-lg'
@@ -204,7 +298,10 @@ export const VerdictDeskStage: React.FC<VerdictDeskStageProps> = ({
 
           <button
             type="button"
-            onClick={() => setAction('flag_fraud')}
+            onClick={() => {
+              setAction('flag_fraud');
+              setApprovedHours(0);
+            }}
             className={`p-4 rounded-xl border text-left transition-all cursor-pointer ${
               action === 'flag_fraud'
                 ? 'bg-amber-950/40 border-amber-500/50 ring-2 ring-amber-500/20 text-white shadow-lg'
@@ -283,11 +380,11 @@ export const VerdictDeskStage: React.FC<VerdictDeskStageProps> = ({
             </button>
           </div>
           <textarea
-            rows={3}
+            rows={4}
             value={justification}
             onChange={(e) => setJustification(e.target.value)}
             placeholder="Technical verification summary for admin clipboard export..."
-            className="w-full p-3 rounded-xl border border-[#27272a] bg-[#18181b] text-xs text-[#d4d4d8] focus:outline-none focus:border-brand-orange leading-relaxed"
+            className="w-full p-3.5 rounded-xl border border-[#27272a] bg-[#18181b] text-xs text-[#d4d4d8] focus:outline-none focus:border-brand-orange leading-relaxed"
           />
         </div>
 

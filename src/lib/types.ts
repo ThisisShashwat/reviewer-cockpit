@@ -67,7 +67,10 @@ export interface CockpitProject {
   projectName: string;
   projectType: 'software' | 'hardware';
   codeUrl: string;
+  allCodeUrls?: string[];
   playableUrl: string;
+  allPlayableUrls?: string[];
+  archiveUrl?: string;
   description: string;
   githubUsername: string;
   screenshotUrl?: string;

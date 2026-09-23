@@ -50,3 +50,18 @@ export function formatDate(dateStr: string): string {
     minute: '2-digit',
   });
 }
+
+/** Decode common HTML entities like &#39;, &quot;, &amp;, etc. */
+export function decodeHtmlEntities(text: string): string {
+  if (!text) return '';
+  return text
+    .replace(/&#39;/g, "'")
+    .replace(/&apos;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&#x27;/g, "'")
+    .replace(/&#x2F;/g, '/')
+    .replace(/&nbsp;/g, ' ');
+}

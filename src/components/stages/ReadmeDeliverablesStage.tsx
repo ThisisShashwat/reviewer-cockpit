@@ -1,23 +1,22 @@
-import React, { useMemo, useState } from 'react';
-import { toast } from 'sonner';
+import React, { useMemo } from 'react';
 import { Marked } from 'marked';
 import 'github-markdown-css/github-markdown-dark.css';
 import {
-  AlertTriangle,
   CheckCircle2,
   ExternalLink,
   FileCode,
   FileText,
-  Globe,
   Image as ImageIcon,
-  Laptop,
-  PackageCheck,
-  Smartphone,
-  XCircle,
+  Copy,
+  Check,
+  AlertTriangle,
+  FolderGit2,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { CockpitProject, GitHubRepoData } from '../../lib/types';
 import { parseGitHubRepo } from '../../lib/api';
 import { PassFailControl } from '../common/PassFailControl';
+import { decodeHtmlEntities } from '../../lib/utils';
 
 interface ReadmeDeliverablesStageProps {
   project: CockpitProject;
@@ -32,50 +31,69 @@ export const ReadmeDeliverablesStage: React.FC<ReadmeDeliverablesStageProps> = (
   project,
   gitHubData,
   onAdvance,
-  onEarlyExit,
+  onEarlyExit: _onEarlyExit,
   reviewChecklist = {},
   onToggleChecklist,
 }) => {
-  const [activeTab, setActiveTab] = useState<'readme' | 'deliverable' | 'split'>('split');
-  const [viewportMode, setViewportMode] = useState<'desktop' | 'mobile'>('desktop');
-  const [isExpandedDesc] = useState(false);
-  const [iframeKey] = useState(0);
+  const [copiedUrl, setCopiedUrl] = React.useState<string | null>(null);
 
-  const playableUrl = (project.playableUrl || '').trim();
   const codeUrl = (project.codeUrl || '').trim();
   const readmeContent = gitHubData?.readmeContent || '';
   const screenshotUrl = (project.screenshotUrl || '').trim();
+  const cleanProjectName = decodeHtmlEntities(project.projectName || '').trim();
+  const cleanDescription = decodeHtmlEntities(project.description || '').trim();
 
-  // Host rule checks per GitBook
-  const isStreamlit = playableUrl.includes('streamlit.app');
-  const isReplit = playableUrl.includes('replit.com') || playableUrl.includes('replit.dev');
-  const isGoogleDrive = playableUrl.includes('drive.google.com');
-  const isDuplicateCodeAndDemo =
-    playableUrl.length > 0 &&
-    codeUrl.length > 0 &&
-    playableUrl.toLowerCase() === codeUrl.toLowerCase();
+  // Multi-link support: all repository links
+  const allRepos =
+    project.allCodeUrls && project.allCodeUrls.length > 0
+      ? project.allCodeUrls
+      : [codeUrl].filter(Boolean);
 
-  const isProhibitedHost = isStreamlit || isReplit || isGoogleDrive;
-  const prohibitedReason = isStreamlit
-    ? 'Streamlit.app apps sleep upon inactivity. GitBook rules require persistent hosting or video demo.'
-    : isReplit
-    ? 'Replit apps shut down upon inactivity. GitBook rules require persistent hosting or video demo.'
-    : isGoogleDrive
-    ? 'Google Drive is disallowed for video demos. Use YouTube, Vimeo, or a direct web video.'
-    : undefined;
-
-  const releases = gitHubData?.releases || [];
-  const hasBinaryReleases = releases.some((r) => r.assets && r.assets.length > 0);
-  const isGitHubUrl = playableUrl.includes('github.com');
-  const isYouTube = playableUrl.includes('youtube.com') || playableUrl.includes('youtu.be');
-  const isDirectVideo = playableUrl.endsWith('.mp4') || playableUrl.endsWith('.webm');
-
-  const getYouTubeEmbedUrl = (url: string) => {
-    const match = url.match(
-      /(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/
-    );
-    return match ? `https://www.youtube.com/embed/${match[1]}` : url;
+  const handlePass = (key: string) => {
+    onToggleChecklist?.(key, true);
   };
+
+  const handleFail = (key: string) => {
+    onToggleChecklist?.(key, false);
+  };
+
+  const copyUrl = (url: string) => {
+    navigator.clipboard.writeText(url);
+    setCopiedUrl(url);
+    toast.success('Copied URL to clipboard');
+    setTimeout(() => setCopiedUrl(null), 2000);
+  };
+
+  // Status checks for Stage 2
+  const hasName = Boolean(cleanProjectName.length >= 2);
+  const isNameExplicitPassed = reviewChecklist['shipped_name_valid'] === true;
+  const isNameExplicitFailed = reviewChecklist['shipped_name_valid'] === false;
+  const isNamePassed =
+    isNameExplicitPassed || (isNameExplicitFailed ? false : hasName);
+
+  const hasCode = Boolean(codeUrl && codeUrl.includes('github.com'));
+  const isCodeExplicitPassed = reviewChecklist['shipped_code_valid'] === true;
+  const isCodeExplicitFailed = reviewChecklist['shipped_code_valid'] === false;
+  const isCodePassed =
+    isCodeExplicitPassed || (isCodeExplicitFailed ? false : hasCode);
+
+  const hasDesc = Boolean(cleanDescription.length >= 10);
+  const isDescExplicitPassed = reviewChecklist['shipped_desc_valid'] === true;
+  const isDescExplicitFailed = reviewChecklist['shipped_desc_valid'] === false;
+  const isDescPassed =
+    isDescExplicitPassed || (isDescExplicitFailed ? false : hasDesc);
+
+  const hasScreenshot = Boolean(screenshotUrl && screenshotUrl.length > 5);
+  const isScreenshotExplicitPassed = reviewChecklist['shipped_screenshot_valid'] === true;
+  const isScreenshotExplicitFailed = reviewChecklist['shipped_screenshot_valid'] === false;
+  const isScreenshotPassed =
+    isScreenshotExplicitPassed || (isScreenshotExplicitFailed ? false : hasScreenshot);
+
+  const hasReadme = Boolean(readmeContent && readmeContent.length > 30);
+  const isReadmeExplicitPassed = reviewChecklist['shipped_readme_valid'] === true;
+  const isReadmeExplicitFailed = reviewChecklist['shipped_readme_valid'] === false;
+  const isReadmePassed =
+    isReadmeExplicitPassed || (isReadmeExplicitFailed ? false : hasReadme);
 
   // Render README with relative image and link resolution
   const renderedReadme = useMemo(() => {
@@ -133,706 +151,365 @@ export const ReadmeDeliverablesStage: React.FC<ReadmeDeliverablesStageProps> = (
     }
   }, [readmeContent, project.codeUrl, gitHubData?.defaultBranch]);
 
-  // Automated 7-Point Shipped Criteria
-  const shippedChecks = useMemo(() => {
-    const hasName = Boolean(project.projectName && project.projectName.trim().length >= 2);
-    const hasDesc = Boolean(project.description && project.description.trim().length >= 10);
-    const hasCode = Boolean(codeUrl && codeUrl.includes('github.com'));
-    const hasDemo = Boolean(playableUrl && !isDuplicateCodeAndDemo);
-    const hasScreenshot = Boolean(screenshotUrl && screenshotUrl.length > 5);
-    const hasReadme = Boolean(readmeContent && readmeContent.length > 30);
-    const hostCompliant = !isProhibitedHost;
-
-    return [
-      {
-        id: 'name_valid',
-        label: 'Project Name',
-        desc: project.projectName || 'Missing project name',
-        passed: hasName,
-        autoPass: hasName,
-        checkKey: 'shipped_name_valid',
-      },
-      {
-        id: 'desc_valid',
-        label: 'Description',
-        desc: project.description
-          ? project.description.length > 80 && !isExpandedDesc
-            ? `${project.description.slice(0, 80)}...`
-            : project.description
-          : 'Missing description',
-        passed: hasDesc,
-        autoPass: hasDesc,
-        checkKey: 'shipped_desc_valid',
-        canExpand: (project.description || '').length > 80,
-      },
-      {
-        id: 'code_valid',
-        label: 'Source Code Repo',
-        desc: codeUrl || 'Missing code URL',
-        passed: hasCode,
-        autoPass: hasCode,
-        checkKey: 'shipped_code_valid',
-        isLink: Boolean(codeUrl),
-        url: codeUrl,
-      },
-      {
-        id: 'playable_valid',
-        label: 'Playable Demo',
-        desc: isDuplicateCodeAndDemo
-          ? 'Identical to Code URL (No compiled binary / video attached)'
-          : playableUrl || 'Missing playable URL',
-        passed: hasDemo,
-        autoPass: hasDemo,
-        checkKey: 'shipped_playable_valid',
-        isLink: Boolean(playableUrl) && !isDuplicateCodeAndDemo,
-        url: playableUrl,
-        warning: isDuplicateCodeAndDemo,
-      },
-      {
-        id: 'screenshot_attached',
-        label: 'Screenshot Image',
-        desc: hasScreenshot ? 'Deliverable image attached' : 'No screenshot provided',
-        passed: hasScreenshot,
-        autoPass: hasScreenshot,
-        checkKey: 'shipped_screenshot_valid',
-        thumbnail: hasScreenshot ? screenshotUrl : undefined,
-      },
-      {
-        id: 'readme_present',
-        label: 'Repository README',
-        desc: hasReadme ? `${readmeContent.length.toLocaleString()} chars with instructions` : 'Missing or empty README.md',
-        passed: hasReadme,
-        autoPass: hasReadme,
-        checkKey: 'shipped_readme_valid',
-      },
-      {
-        id: 'host_compliant',
-        label: 'Host Compliance',
-        desc: isProhibitedHost
-          ? prohibitedReason || 'Disallowed host detected'
-          : 'Compliant persistent hosting',
-        passed: hostCompliant,
-        autoPass: hostCompliant,
-        checkKey: 'shipped_host_compliant',
-        isBlocker: isProhibitedHost,
-      },
-    ];
-  }, [
-    project.projectName,
-    project.description,
-    codeUrl,
-    playableUrl,
-    screenshotUrl,
-    readmeContent,
-    isProhibitedHost,
-    prohibitedReason,
-    isDuplicateCodeAndDemo,
-    isExpandedDesc,
-  ]);
-
-  const passedCount = shippedChecks.filter((c) => {
-    if (reviewChecklist[c.checkKey] !== undefined) {
-      return reviewChecklist[c.checkKey];
-    }
-    return c.autoPass;
-  }).length;
-
-  const handlePass = (key: string) => {
-    onToggleChecklist?.(key, true);
-  };
-
-  const handleFail = (key: string) => {
-    onToggleChecklist?.(key, false);
-  };
-
-  const handleBatchApproveAll = () => {
-    shippedChecks.forEach((c) => {
-      onToggleChecklist?.(c.checkKey, true);
-    });
-    toast.success('Marked all 7 shipped checks as Passed');
-  };
-
   return (
-    <div className="h-full overflow-y-auto p-8 space-y-6 max-w-6xl mx-auto flex flex-col">
+    <div className="h-full overflow-y-auto p-8 space-y-6 max-w-6xl mx-auto flex flex-col select-text">
       {/* Stage Header */}
       <div className="flex items-start justify-between pb-5 border-b border-border-subtle shrink-0">
         <div>
           <div className="flex items-center gap-2">
             <span className="text-xs font-mono font-bold uppercase tracking-wider text-brand-orange bg-brand-orange/10 px-2 py-0.5 rounded border border-brand-orange/20">
-              Stage 2 of 5
+              Stage 2 of 6
             </span>
-            <span className="text-xs text-content-tertiary">GitBook Shipped Verification</span>
+            <span className="text-xs text-content-tertiary">Deliverables & README Audit</span>
           </div>
           <h2 className="text-lg font-bold text-content-primary mt-1 font-heading">
-            Readme & Shipped Deliverables Verification
+            Project Deliverables, Screenshot & README Documentation
           </h2>
           <p className="text-xs text-content-tertiary mt-1 max-w-2xl">
-            Audit the 7 core requirements that define a shipped Hack Club project: title, description, code repository, playable testing, screenshot, README, and host stability.
+            Audit core project metadata: title, repository source code, untruncated description, submitted deliverable image, and README setup instructions.
           </p>
-        </div>
-
-        {/* View Layout Tabs */}
-        <div className="flex items-center gap-2 shrink-0">
-          <div className="flex items-center bg-canvas-card border border-border-subtle rounded-xl p-1 shadow-xs text-xs">
-            <button
-              type="button"
-              onClick={() => setActiveTab('split')}
-              className={`px-3.5 py-1.5 rounded-lg font-semibold transition-all cursor-pointer ${
-                activeTab === 'split'
-                  ? 'bg-[#ff6b35] text-white shadow-xs font-bold'
-                  : 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100'
-              }`}
-            >
-              Split View
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('readme')}
-              className={`px-3.5 py-1.5 rounded-lg font-semibold transition-all cursor-pointer ${
-                activeTab === 'readme'
-                  ? 'bg-[#ff6b35] text-white shadow-xs font-bold'
-                  : 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100'
-              }`}
-            >
-              README View
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('deliverable')}
-              className={`px-3.5 py-1.5 rounded-lg font-semibold transition-all cursor-pointer ${
-                activeTab === 'deliverable'
-                  ? 'bg-[#ff6b35] text-white shadow-xs font-bold'
-                  : 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100'
-              }`}
-            >
-              Deliverable & Demo
-            </button>
-          </div>
         </div>
       </div>
 
-      {/* TOP MANDATORY RIBBON: 7-Point Shipped Criteria Checklist */}
-      <div className="p-5 rounded-2xl bg-[#121214] border border-[#27272a] text-white shadow-xl space-y-4 shrink-0">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#27272a] pb-3">
-          <div className="flex items-center gap-2.5">
-            <PackageCheck className="w-5 h-5 text-brand-orange" />
-            <div>
-              <h3 className="text-xs font-bold uppercase tracking-wider text-white">
-                Official GitBook Shipped Requirements Checklist
-              </h3>
-              <p className="text-[11px] text-[#a1a1aa] mt-0.5">
-                Every project in Unified must satisfy all shipped criteria before approval.
-              </p>
+      {/* 1. CORE PROJECT METADATA CARD (Perfect Alignment) */}
+      <div className="bg-[#121214] border border-[#27272a] rounded-2xl p-6 text-white shadow-xl space-y-5 shrink-0">
+        <div className="flex items-center justify-between border-b border-[#27272a] pb-3">
+          <div className="flex items-center gap-2">
+            <FolderGit2 className="w-4 h-4 text-brand-orange" />
+            <h3 className="text-xs font-bold uppercase tracking-wider text-white">
+              Project Identification & Source Code
+            </h3>
+          </div>
+          <span className="text-[11px] font-mono text-[#a1a1aa]">
+            GitBook Rules Requirement 1, 2 & 3
+          </span>
+        </div>
+
+        {/* Row 1: Project Title */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-xl bg-[#18181b] border border-[#27272a]">
+          <div className="space-y-1 min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold text-white">Project Title</span>
+              <span
+                className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase ${
+                  isNamePassed
+                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                    : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                }`}
+              >
+                {isNamePassed ? 'PASS' : 'FAIL'}
+              </span>
             </div>
+            <p className="text-sm font-bold text-white tracking-wide truncate">
+              {cleanProjectName || <span className="text-rose-400 font-normal">Missing project name</span>}
+            </p>
           </div>
 
-          <div className="flex items-center gap-2.5">
-            <span
-              className={`px-2.5 py-1 rounded-md text-xs font-mono font-bold border ${
-                passedCount === 7
-                  ? 'bg-emerald-950/70 text-emerald-400 border-emerald-500/40'
-                  : passedCount >= 5
-                  ? 'bg-amber-950/70 text-amber-400 border-amber-500/40'
-                  : 'bg-rose-950/70 text-rose-400 border-rose-500/40'
-              }`}
-            >
-              {passedCount} / 7 Checks Passed
-            </span>
-
-            <button
-              type="button"
-              onClick={handleBatchApproveAll}
-              className="px-2.5 py-1 rounded-md bg-[#27272a] hover:bg-[#3f3f46] text-[#e4e4e7] text-xs font-semibold transition-colors"
-            >
-              Approve All
-            </button>
-
-            {passedCount < 7 && onEarlyExit && (
-              <button
-                type="button"
-                onClick={() =>
-                  onEarlyExit(
-                    `Failed Shipped Requirements: ${shippedChecks
-                      .filter((c) => reviewChecklist[c.checkKey] === false || (!c.autoPass && reviewChecklist[c.checkKey] !== true))
-                      .map((c) => c.label)
-                      .join(', ')}`
-                  )
-                }
-                className="px-3 py-1 rounded-md bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold transition-colors shadow-sm"
-              >
-                Reject for Missing Requirements
-              </button>
-            )}
+          <div className="flex items-center gap-3 shrink-0">
+            <span className="text-[11px] text-[#71717a] font-mono">Check</span>
+            <PassFailControl
+              label="Project Title"
+              status={
+                isNameExplicitPassed ? true : isNameExplicitFailed ? false : undefined
+              }
+              onPass={() => handlePass('shipped_name_valid')}
+              onFail={() => handleFail('shipped_name_valid')}
+            />
           </div>
         </div>
 
-        {/* 7 Interactive Criteria Cards + 1 Summary Card (Exact 4x2 Symmetrical Grid) */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
-          {shippedChecks.map((check) => {
-            const isExplicitlyPassed = reviewChecklist[check.checkKey] === true;
-            const isExplicitlyFailed = reviewChecklist[check.checkKey] === false;
-            const isCurrentPassed =
-              isExplicitlyPassed || (isExplicitlyFailed ? false : check.autoPass);
-
-            return (
-              <div
-                key={check.id}
-                className="p-3.5 rounded-xl border border-[#27272a] bg-[#18181b] text-white flex flex-col justify-between h-[128px] shadow-sm transition-colors"
-              >
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-white flex items-center gap-1.5 truncate">
-                      {isCurrentPassed ? (
-                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                      ) : (
-                        <XCircle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
-                      )}
-                      <span className="truncate">{check.label}</span>
-                    </span>
-
+        {/* Row 2: Source Code Repository URL(s) - Untruncated */}
+        <div className="space-y-2">
+          {allRepos.map((repoUrl, idx) => (
+            <div
+              key={idx}
+              className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-xl bg-[#18181b] border border-[#27272a]"
+            >
+              <div className="space-y-1 min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-semibold text-white">
+                    {allRepos.length > 1 ? `Source Code Repo ${idx + 1}` : 'Source Code Repository'}
+                  </span>
+                  {idx === 0 && (
                     <span
-                      className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-bold uppercase shrink-0 ${
-                        isCurrentPassed
+                      className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase ${
+                        isCodePassed
                           ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
                           : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
                       }`}
                     >
-                      {isCurrentPassed ? 'PASS' : 'FAIL'}
+                      {isCodePassed ? 'PASS' : 'FAIL'}
                     </span>
-                  </div>
-
-                  <div className="text-[11px] text-[#a1a1aa] line-clamp-2 h-[34px] leading-tight flex items-center">
-                    {check.isLink ? (
-                      <a
-                        href={check.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-[#ff6b35] hover:underline font-mono inline-flex items-center gap-1 truncate"
-                      >
-                        <span className="truncate">{check.desc}</span>
-                        <ExternalLink className="w-2.5 h-2.5 shrink-0" />
-                      </a>
-                    ) : (
-                      <p className="line-clamp-2">{check.desc}</p>
-                    )}
-                  </div>
+                  )}
                 </div>
 
-                <div className="pt-2 border-t border-[#27272a] flex items-center justify-between">
-                  <span className="text-[10px] text-[#71717a] font-mono">Verdict</span>
+                <div className="flex items-center gap-2 min-w-0">
+                  <a
+                    href={repoUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="font-mono text-xs text-brand-orange hover:underline truncate inline-flex items-center gap-1.5"
+                    title={repoUrl}
+                  >
+                    <span className="truncate">{repoUrl}</span>
+                    <ExternalLink className="w-3 h-3 shrink-0" />
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => copyUrl(repoUrl)}
+                    className="p-1 rounded text-[#a1a1aa] hover:text-white hover:bg-[#27272a] cursor-pointer shrink-0"
+                    title="Copy URL"
+                  >
+                    {copiedUrl === repoUrl ? (
+                      <Check className="w-3 h-3 text-emerald-400" />
+                    ) : (
+                      <Copy className="w-3 h-3" />
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {idx === 0 && (
+                <div className="flex items-center gap-3 shrink-0">
+                  <span className="text-[11px] text-[#71717a] font-mono">Check</span>
                   <PassFailControl
-                    label={check.label}
+                    label="Source Code"
                     status={
-                      isExplicitlyPassed ? true : isExplicitlyFailed ? false : undefined
+                      isCodeExplicitPassed ? true : isCodeExplicitFailed ? false : undefined
                     }
-                    onPass={() => handlePass(check.checkKey)}
-                    onFail={() => handleFail(check.checkKey)}
+                    onPass={() => handlePass('shipped_code_valid')}
+                    onFail={() => handleFail('shipped_code_valid')}
                   />
                 </div>
-              </div>
-            );
-          })}
-
-          {/* 8th Slot: Uniform Shipped Requirements Audit Summary Card */}
-          <div className="p-3.5 rounded-xl border border-[#27272a] bg-[#18181b] text-white flex flex-col justify-between h-[128px] shadow-sm">
-            <div className="space-y-1">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-white flex items-center gap-1.5">
-                  <PackageCheck className="w-3.5 h-3.5 text-[#ff6b35]" />
-                  <span>Audit Summary</span>
-                </span>
-                <span
-                  className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-bold uppercase ${
-                    passedCount === 7
-                      ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                      : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                  }`}
-                >
-                  {passedCount}/7
-                </span>
-              </div>
-              <p className="text-[11px] text-[#a1a1aa] line-clamp-2 h-[34px] leading-tight flex items-center">
-                {passedCount === 7
-                  ? 'All 7 mandatory GitBook criteria verified.'
-                  : `${7 - passedCount} requirement(s) missing or pending pass.`}
-              </p>
+              )}
             </div>
+          ))}
 
-            <div className="pt-2 border-t border-[#27272a] flex items-center justify-between">
-              <span className="text-[10px] text-[#71717a] font-mono">Batch Action</span>
-              <button
-                type="button"
-                onClick={handleBatchApproveAll}
-                className="px-2.5 py-1 rounded-md text-[11px] font-semibold bg-[#27272a] hover:bg-[#3f3f46] text-[#e4e4e7] transition-colors cursor-pointer"
+          {allRepos.length === 0 && (
+            <div className="p-4 rounded-xl bg-rose-950/40 border border-rose-500/40 text-rose-300 text-xs flex items-center justify-between">
+              <span className="font-semibold">No source code repository provided.</span>
+              <PassFailControl
+                label="Source Code"
+                status={false}
+                onPass={() => handlePass('shipped_code_valid')}
+                onFail={() => handleFail('shipped_code_valid')}
+              />
+            </div>
+          )}
+        </div>
+
+        {/* Row 3: Full Untruncated Description Box */}
+        <div className="p-4 rounded-xl bg-[#18181b] border border-[#27272a] space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold text-white">Project Description</span>
+              <span
+                className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase ${
+                  isDescPassed
+                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                    : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                }`}
               >
-                Approve All 7
-              </button>
+                {isDescPassed ? 'PASS' : 'FAIL'}
+              </span>
+              <span className="text-[11px] font-mono text-[#a1a1aa]">
+                ({cleanDescription.length} characters)
+              </span>
             </div>
+
+            <div className="flex items-center gap-3 shrink-0">
+              <span className="text-[11px] text-[#71717a] font-mono">Check</span>
+              <PassFailControl
+                label="Description"
+                status={
+                  isDescExplicitPassed ? true : isDescExplicitFailed ? false : undefined
+                }
+                onPass={() => handlePass('shipped_desc_valid')}
+                onFail={() => handleFail('shipped_desc_valid')}
+              />
+            </div>
+          </div>
+
+          <div className="p-3.5 rounded-lg bg-[#121214] border border-[#27272a] text-xs text-[#d4d4d8] leading-relaxed whitespace-pre-wrap select-text">
+            {cleanDescription || (
+              <span className="text-rose-400 italic">No project description provided.</span>
+            )}
           </div>
         </div>
       </div>
 
-      {/* Disallowed Host Blocker Alert Banner */}
-      {isProhibitedHost && (
-        <div className="p-4 rounded-xl bg-rose-950/40 border border-rose-500/50 text-rose-200 flex items-start gap-3 shadow-lg shrink-0">
-          <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
-          <div className="text-xs space-y-1 flex-1">
-            <span className="font-bold text-rose-300 block text-sm">
-              Instant GitBook Blocker: Disallowed Web or Video Host
-            </span>
-            <p className="text-rose-200/90 leading-relaxed">{prohibitedReason}</p>
-            <div className="pt-1">
-              <span className="text-[11px] text-rose-300 font-mono">
-                Playable URL: {playableUrl}
-              </span>
-            </div>
-          </div>
-          {onEarlyExit && (
-            <button
-              type="button"
-              onClick={() => onEarlyExit(`Disallowed Host: ${prohibitedReason}`)}
-              className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold transition-colors shrink-0 shadow-sm"
+      {/* 2. SUBMITTED DELIVERABLE SCREENSHOT CARD */}
+      <div className="bg-[#121214] border border-[#27272a] rounded-2xl p-6 text-white shadow-xl space-y-4 shrink-0">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#27272a] pb-3">
+          <div className="flex items-center gap-2">
+            <ImageIcon className="w-4 h-4 text-brand-orange" />
+            <h3 className="text-xs font-bold uppercase tracking-wider text-white">
+              Submitted Deliverable Screenshot
+            </h3>
+            <span
+              className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase ml-2 ${
+                isScreenshotPassed
+                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                  : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+              }`}
             >
-              Reject: Disallowed Host
-            </button>
-          )}
-        </div>
-      )}
-
-      {/* WORKSPACE CONTENT: README & DELIVERABLES */}
-      <div className="flex-1 flex flex-col min-h-0 space-y-6">
-        {/* Split View */}
-        {activeTab === 'split' ? (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 flex-1 min-h-[500px]">
-            {/* README Panel */}
-            <div className="bg-[#121214] border border-[#27272a] rounded-2xl flex flex-col overflow-hidden shadow-lg">
-              <div className="p-3.5 bg-[#18181b] border-b border-[#27272a] flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <FileText className="w-4 h-4 text-brand-orange" />
-                  <span className="text-xs font-bold uppercase tracking-wider text-white">
-                    Repository README.md
-                  </span>
-                </div>
-                {codeUrl && (
-                  <a
-                    href={`${codeUrl}#readme`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-xs text-brand-orange hover:underline font-mono inline-flex items-center gap-1"
-                  >
-                    <span>GitHub README</span>
-                    <ExternalLink className="w-3 h-3" />
-                  </a>
-                )}
-              </div>
-              <div className="flex-1 overflow-y-auto p-6 select-text">
-                {renderedReadme ? (
-                  <div
-                    className="markdown-body text-xs leading-relaxed"
-                    dangerouslySetInnerHTML={{ __html: renderedReadme }}
-                  />
-                ) : (
-                  <div className="py-16 text-center text-xs text-[#71717a]">
-                    No README.md discovered in repository root.
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Deliverable & Screenshot Panel */}
-            <div className="bg-[#121214] border border-[#27272a] rounded-2xl flex flex-col overflow-hidden shadow-lg">
-              <div className="p-3.5 bg-[#18181b] border-b border-[#27272a] flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Globe className="w-4 h-4 text-brand-orange" />
-                  <span className="text-xs font-bold uppercase tracking-wider text-white">
-                    Playable Deliverable & Screenshot
-                  </span>
-                </div>
-                {playableUrl && (
-                  <a
-                    href={playableUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-xs text-brand-orange hover:underline font-mono inline-flex items-center gap-1"
-                  >
-                    <span>Open External</span>
-                    <ExternalLink className="w-3 h-3" />
-                  </a>
-                )}
-              </div>
-              <div className="flex-1 overflow-y-auto p-5 space-y-5">
-                {/* Screenshot Card */}
-                {screenshotUrl && (
-                  <div className="space-y-2">
-                    <span className="text-xs font-mono font-bold uppercase tracking-wider text-[#a1a1aa] block">
-                      Submitted Deliverable Screenshot
-                    </span>
-                    <div className="rounded-xl border border-[#27272a] overflow-hidden bg-black/60 shadow-md">
-                      <img
-                        src={screenshotUrl}
-                        alt="Submitted Deliverable Screenshot"
-                        className="w-full max-h-72 object-contain"
-                      />
-                    </div>
-                  </div>
-                )}
-
-                {/* Deliverable Preview */}
-                <div className="space-y-2">
-                  <span className="text-xs font-mono font-bold uppercase tracking-wider text-[#a1a1aa] block">
-                    Playable Testing
-                  </span>
-                  {isYouTube ? (
-                    <div className="rounded-xl overflow-hidden border border-[#27272a] aspect-video">
-                      <iframe
-                        src={getYouTubeEmbedUrl(playableUrl)}
-                        title="YouTube video player"
-                        className="w-full h-full"
-                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                        allowFullScreen
-                      />
-                    </div>
-                  ) : isDirectVideo ? (
-                    <video src={playableUrl} controls className="w-full rounded-xl border border-[#27272a]" />
-                  ) : playableUrl && !isGitHubUrl ? (
-                    <div className="rounded-xl overflow-hidden border border-[#27272a] h-72 bg-white">
-                      <iframe
-                        key={iframeKey}
-                        src={playableUrl}
-                        title="Playable Preview"
-                        className="w-full h-full border-0"
-                        sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
-                      />
-                    </div>
-                  ) : (
-                    <div className="p-6 rounded-xl bg-[#18181b] border border-[#27272a] text-center text-xs text-[#a1a1aa]">
-                      <p>Playable link points to GitHub or external host.</p>
-                      <a
-                        href={playableUrl || codeUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand-orange text-white font-semibold text-xs"
-                      >
-                        <span>Open Deliverable URL</span>
-                        <ExternalLink className="w-3.5 h-3.5" />
-                      </a>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
+              {isScreenshotPassed ? 'PASS' : 'FAIL'}
+            </span>
           </div>
-        ) : activeTab === 'readme' ? (
-          /* Full README View */
-          <div className="bg-[#121214] border border-[#27272a] rounded-2xl flex flex-col overflow-hidden shadow-lg flex-1 min-h-[500px]">
-            <div className="p-3.5 bg-[#18181b] border-b border-[#27272a] flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <FileText className="w-4 h-4 text-brand-orange" />
-                <span className="text-xs font-bold uppercase tracking-wider text-white">
-                  Repository README.md
-                </span>
-                {gitHubData?.defaultBranch && (
-                  <span className="text-[10px] font-mono text-[#a1a1aa] bg-[#27272a] px-2 py-0.5 rounded">
-                    branch: {gitHubData.defaultBranch}
-                  </span>
-                )}
-              </div>
 
-              {codeUrl && (
-                <div className="flex items-center gap-2">
-                  <a
-                    href={`${codeUrl}#readme`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="px-3 py-1.5 rounded-lg bg-[#27272a] hover:bg-[#3f3f46] text-white text-xs font-semibold flex items-center gap-1.5 transition-colors"
-                  >
-                    <span>View on GitHub</span>
-                    <ExternalLink className="w-3 h-3" />
-                  </a>
-                </div>
-              )}
-            </div>
-
-            <div className="flex-1 overflow-y-auto p-8 select-text">
-              {renderedReadme ? (
-                <div
-                  className="markdown-body text-xs leading-relaxed max-w-4xl mx-auto"
-                  dangerouslySetInnerHTML={{ __html: renderedReadme }}
-                />
-              ) : (
-                <div className="py-24 text-center text-xs text-[#71717a] space-y-2">
-                  <FileCode className="w-8 h-8 text-[#52525b] mx-auto" />
-                  <p>No README.md discovered in repository root.</p>
-                  <p className="text-[11px] text-[#52525b]">
-                    GitBook guidelines require setup and usage documentation for software submissions.
-                  </p>
-                </div>
-              )}
-            </div>
-          </div>
-        ) : (
-          /* Deliverables & Playable Testing View */
-          <div className="space-y-6 flex-1">
-            {/* Submitted Screenshot Highlight Card */}
+          <div className="flex items-center gap-4">
             {screenshotUrl && (
-              <div className="p-5 rounded-2xl bg-[#121214] border border-[#27272a] text-white shadow-lg space-y-3 shrink-0">
-                <div className="flex items-center justify-between border-b border-[#27272a] pb-3">
-                  <div className="flex items-center gap-2">
-                    <ImageIcon className="w-4 h-4 text-brand-orange" />
-                    <h3 className="text-xs font-bold uppercase tracking-wider text-white">
-                      Submitted Deliverable Screenshot
-                    </h3>
-                  </div>
-                  <a
-                    href={screenshotUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-xs text-brand-orange hover:underline font-mono inline-flex items-center gap-1"
-                  >
-                    <span>Open Fullscreen</span>
-                    <ExternalLink className="w-3 h-3" />
-                  </a>
-                </div>
-
-                <div className="rounded-xl overflow-hidden border border-[#27272a] bg-black/50 p-2 flex justify-center">
-                  <img
-                    src={screenshotUrl}
-                    alt="Submitted Project Deliverable"
-                    className="max-h-96 w-auto object-contain rounded-lg shadow"
-                  />
-                </div>
-              </div>
+              <a
+                href={screenshotUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="text-xs text-brand-orange hover:underline font-mono inline-flex items-center gap-1"
+              >
+                <span>Open Original Image</span>
+                <ExternalLink className="w-3 h-3" />
+              </a>
             )}
 
-            {/* Interactive Playable Sandbox / Video / Releases */}
-            <div className="bg-[#121214] border border-[#27272a] rounded-2xl flex flex-col overflow-hidden shadow-lg min-h-[440px]">
-              <div className="p-3.5 bg-[#18181b] border-b border-[#27272a] flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Globe className="w-4 h-4 text-brand-orange" />
-                  <span className="text-xs font-bold uppercase tracking-wider text-white">
-                    Playable Sandbox & Testing
-                  </span>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  {!isGitHubUrl && !isYouTube && (
-                    <div className="flex items-center bg-[#27272a] rounded-lg p-0.5">
-                      <button
-                        type="button"
-                        onClick={() => setViewportMode('desktop')}
-                        className={`p-1.5 rounded-md ${
-                          viewportMode === 'desktop'
-                            ? 'bg-[#18181b] text-brand-orange'
-                            : 'text-[#a1a1aa] hover:text-white'
-                        }`}
-                        title="Desktop Viewport"
-                      >
-                        <Laptop className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setViewportMode('mobile')}
-                        className={`p-1.5 rounded-md ${
-                          viewportMode === 'mobile'
-                            ? 'bg-[#18181b] text-brand-orange'
-                            : 'text-[#a1a1aa] hover:text-white'
-                        }`}
-                        title="Mobile Viewport"
-                      >
-                        <Smartphone className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  )}
-
-                  {playableUrl && (
-                    <a
-                      href={playableUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="px-3 py-1.5 rounded-lg bg-brand-orange hover:bg-orange-600 text-white text-xs font-semibold inline-flex items-center gap-1.5 transition-colors shadow-sm"
-                    >
-                      <span>Open Playable Link</span>
-                      <ExternalLink className="w-3.5 h-3.5" />
-                    </a>
-                  )}
-                </div>
-              </div>
-
-              <div className="p-6 flex-1 flex flex-col justify-center items-center">
-                {isYouTube ? (
-                  <div className="w-full max-w-3xl aspect-video rounded-xl overflow-hidden border border-[#27272a]">
-                    <iframe
-                      src={getYouTubeEmbedUrl(playableUrl)}
-                      title="YouTube video player"
-                      className="w-full h-full"
-                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                      allowFullScreen
-                    />
-                  </div>
-                ) : isDirectVideo ? (
-                  <video
-                    src={playableUrl}
-                    controls
-                    className="w-full max-w-3xl rounded-xl border border-[#27272a]"
-                  />
-                ) : playableUrl && !isGitHubUrl ? (
-                  <div
-                    className={`w-full transition-all rounded-xl overflow-hidden border border-[#27272a] bg-white h-[450px] ${
-                      viewportMode === 'mobile' ? 'max-w-sm mx-auto shadow-2xl' : 'max-w-full'
-                    }`}
-                  >
-                    <iframe
-                      key={iframeKey}
-                      src={playableUrl}
-                      title="Playable Demo"
-                      className="w-full h-full border-0"
-                      sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
-                    />
-                  </div>
-                ) : (
-                  <div className="p-8 text-center text-xs text-[#a1a1aa] space-y-3">
-                    <PackageCheck className="w-10 h-10 text-[#52525b] mx-auto" />
-                    <p className="font-semibold text-white">External Demo or Compiled Application</p>
-                    <p className="max-w-md mx-auto text-[#71717a]">
-                      The provided Playable URL is either a GitHub release, an external store, or requires standalone execution.
-                    </p>
-                    {hasBinaryReleases && (
-                      <div className="p-3 rounded-xl bg-[#18181b] border border-[#27272a] text-emerald-400 font-mono inline-block">
-                        ✓ GitHub release contains downloadable binary assets (.exe / .dmg / .AppImage)
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
+            <div className="flex items-center gap-3">
+              <span className="text-[11px] text-[#71717a] font-mono">Check</span>
+              <PassFailControl
+                label="Screenshot"
+                status={
+                  isScreenshotExplicitPassed
+                    ? true
+                    : isScreenshotExplicitFailed
+                    ? false
+                    : undefined
+                }
+                onPass={() => handlePass('shipped_screenshot_valid')}
+                onFail={() => handleFail('shipped_screenshot_valid')}
+              />
             </div>
           </div>
+        </div>
+
+        {screenshotUrl ? (
+          <div className="rounded-xl overflow-hidden border border-[#27272a] bg-black/60 p-3 flex justify-center items-center shadow-inner">
+            <img
+              src={screenshotUrl}
+              alt="Submitted Project Deliverable Screenshot"
+              className="max-h-[500px] w-auto max-w-full object-contain rounded-lg shadow-lg"
+              loading="lazy"
+            />
+          </div>
+        ) : (
+          <div className="p-8 rounded-xl bg-[#18181b] border border-[#27272a] text-center text-xs text-[#a1a1aa] space-y-2">
+            <ImageIcon className="w-8 h-8 text-[#52525b] mx-auto" />
+            <p className="font-semibold text-rose-400">No screenshot image attached to submission.</p>
+            <p className="text-[11px] text-[#71717a]">
+              GitBook guidelines require an image screenshot of the completed deliverable.
+            </p>
+          </div>
         )}
+      </div>
+
+      {/* 3. REPOSITORY DOCUMENTATION (README.md) VIEWER */}
+      <div className="bg-[#121214] border border-[#27272a] rounded-2xl overflow-hidden text-white shadow-xl flex flex-col shrink-0 min-h-[600px]">
+        {/* README Header */}
+        <div className="p-4 bg-[#18181b] border-b border-[#27272a] flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <FileText className="w-4 h-4 text-brand-orange" />
+            <span className="text-xs font-bold uppercase tracking-wider text-white">
+              Repository README.md Documentation
+            </span>
+            {gitHubData?.defaultBranch && (
+              <span className="text-[10px] font-mono text-[#a1a1aa] bg-[#27272a] px-2 py-0.5 rounded">
+                branch: {gitHubData.defaultBranch}
+              </span>
+            )}
+          </div>
+
+          {codeUrl && (
+            <a
+              href={`${codeUrl}#readme`}
+              target="_blank"
+              rel="noreferrer"
+              className="px-3 py-1.5 rounded-lg bg-[#27272a] hover:bg-[#3f3f46] text-[#e4e4e7] text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+            >
+              <span>View on GitHub</span>
+              <ExternalLink className="w-3.5 h-3.5" />
+            </a>
+          )}
+        </div>
+
+        {/* README Body Viewer */}
+        <div className="p-8 select-text bg-[#0d0d0f] overflow-y-auto max-h-[700px]">
+          {renderedReadme ? (
+            <div
+              className="markdown-body text-xs leading-relaxed max-w-4xl mx-auto"
+              dangerouslySetInnerHTML={{ __html: renderedReadme }}
+            />
+          ) : (
+            <div className="py-20 text-center text-xs text-[#71717a] space-y-2">
+              <FileCode className="w-8 h-8 text-[#52525b] mx-auto" />
+              <p className="font-semibold text-rose-400">No README.md discovered in repository root.</p>
+              <p className="text-[11px] text-[#71717a]">
+                GitBook guidelines require setup, execution, and feature documentation for all software submissions.
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* README Footer: Pass/Fail Control Placed Directly Beneath */}
+        <div className="p-4 bg-[#18181b] border-t border-[#27272a] flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span
+              className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase ${
+                isReadmePassed
+                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                  : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+              }`}
+            >
+              {isReadmePassed ? 'PASS' : 'FAIL'}
+            </span>
+            <span className="text-xs text-[#a1a1aa]">
+              {readmeContent
+                ? `${readmeContent.length.toLocaleString()} characters of documentation`
+                : 'Missing repository README'}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <span className="text-[11px] text-[#71717a] font-mono">README Check</span>
+            <PassFailControl
+              label="README"
+              status={
+                isReadmeExplicitPassed ? true : isReadmeExplicitFailed ? false : undefined
+              }
+              onPass={() => handlePass('shipped_readme_valid')}
+              onFail={() => handleFail('shipped_readme_valid')}
+            />
+          </div>
+        </div>
       </div>
 
       {/* Footer Navigation Bar */}
       <div className="pt-4 border-t border-border-subtle flex items-center justify-between shrink-0">
         <div className="flex items-center gap-3 text-xs">
-          <span className="text-content-tertiary">
-            {passedCount === 7 ? (
-              <span className="text-emerald-400 font-semibold flex items-center gap-1">
-                <CheckCircle2 className="w-3.5 h-3.5" />
-                All 7 GitBook Shipped Requirements Passed
-              </span>
-            ) : (
-              <span className="text-amber-400 font-semibold flex items-center gap-1">
-                <AlertTriangle className="w-3.5 h-3.5" />
-                {7 - passedCount} requirement(s) pending verification
-              </span>
-            )}
-          </span>
+          {isNamePassed && isCodePassed && isDescPassed && isScreenshotPassed && isReadmePassed ? (
+            <span className="text-emerald-400 font-semibold flex items-center gap-1.5">
+              <CheckCircle2 className="w-4 h-4" />
+              <span>All Core Deliverables & Documentation Verified</span>
+            </span>
+          ) : (
+            <span className="text-amber-400 font-semibold flex items-center gap-1.5">
+              <AlertTriangle className="w-4 h-4" />
+              <span>One or more deliverable checks pending review</span>
+            </span>
+          )}
         </div>
 
         <button
           type="button"
           onClick={onAdvance}
-          className="px-5 py-2.5 rounded-xl bg-[#ff6b35] text-white font-bold hover:bg-[#ea580c] transition-all shadow-md flex items-center gap-1.5 cursor-pointer text-xs"
+          className="px-5 py-2.5 rounded-xl bg-brand-orange text-white font-bold hover:bg-orange-600 transition-all shadow-md flex items-center gap-1.5 cursor-pointer text-xs"
         >
-          <span>Next: Telemetry & Introspect →</span>
+          <span>Next: Playable Demo & Testing →</span>
         </button>
       </div>
     </div>

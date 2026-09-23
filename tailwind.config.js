@@ -9,8 +9,8 @@ export default {
       colors: {
         /* Crisp Horizons Light Theme Tokens */
         canvas: {
-          DEFAULT: '#f5f5f7',  // Clean subtle background
-          subtle: '#ebebef',   // Slightly darker track/well
+          DEFAULT: '#eaeaf0',  // Crisp grayer canvas for distinct separation
+          subtle: '#e2e2e9',   // Slightly darker track/well
           card: '#ffffff',     // Pure white card & panel surface
           hover: '#f0f0f4',    // Hover row / button hover
           elevated: '#ffffff', // Dropdowns / active controls
