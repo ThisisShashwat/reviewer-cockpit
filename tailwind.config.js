@@ -4,45 +4,52 @@ export default {
     "./index.html",
     "./src/**/*.{js,ts,jsx,tsx}",
   ],
-  darkMode: 'class',
   theme: {
     extend: {
       colors: {
+        /* Crisp Horizons Light Theme Tokens */
         canvas: {
-          DEFAULT: '#09090b',  // Pitch obsidian background (Zinc-950)
-          subtle: '#111113',   // Subtle secondary background
-          card: '#161619',     // Card & panel surface
-          hover: '#1e1e23',    // Table hover row & button hover
-          elevated: '#25252b', // Elevated dropdowns / active controls
+          DEFAULT: '#f5f5f7',  // Clean subtle background
+          subtle: '#ebebef',   // Slightly darker track/well
+          card: '#ffffff',     // Pure white card & panel surface
+          hover: '#f0f0f4',    // Hover row / button hover
+          elevated: '#ffffff', // Dropdowns / active controls
         },
         border: {
-          subtle: 'rgba(255, 255, 255, 0.08)',
-          DEFAULT: 'rgba(255, 255, 255, 0.12)',
-          focus: '#ff6b35',
+          subtle: '#e5e5ea',   // Hairline border
+          DEFAULT: '#d1d1d6',  // Standard crisp border
+          strong: '#8e8e93',   // Emphasized border
+          focus: '#ec3750',    // Focus state (Hack Club Red)
         },
         content: {
-          primary: '#fafafa',   // Crisp stark white for headers & key metrics
-          secondary: '#d4d4d8', // Readable high-contrast zinc for body copy
-          tertiary: '#a1a1aa',  // Metadata, timestamps, handles
-          muted: '#71717a',     // Subtle placeholder/disabled text
+          primary: '#111113',   // Stark readable near-black text
+          secondary: '#3a3a3c', // High-contrast dark charcoal for body
+          tertiary: '#636366',  // Metadata, labels, timestamps
+          muted: '#8e8e93',     // Subtle placeholder / disabled text
         },
         brand: {
-          orange: '#ff6b35',    // Accent orange
-          red: '#ec3750',       // Hack Club red
+          red: '#ec3750',       // Hack Club signature red
+          orange: '#ff6b35',    // Horizons orange
+          accent: '#ec3750',
         },
         semantic: {
-          success: '#22c55e',
-          successBg: 'rgba(34, 197, 94, 0.12)',
-          warning: '#f59e0b',
-          warningBg: 'rgba(245, 158, 11, 0.12)',
-          danger: '#ef4444',
-          dangerBg: 'rgba(239, 68, 68, 0.12)',
-          info: '#3b82f6',
-          infoBg: 'rgba(59, 130, 246, 0.12)',
+          success: '#15803d',     // Green (700)
+          successBg: '#f0fdf4',   // Light green
+          successBorder: '#bbf7d0',
+          warning: '#b45309',     // Amber (700)
+          warningBg: '#fffbeb',   // Light amber
+          warningBorder: '#fde68a',
+          danger: '#b91c1c',      // Red (700)
+          dangerBg: '#fef2f2',    // Light red
+          dangerBorder: '#fecaca',
+          info: '#1d4ed8',        // Blue (700)
+          infoBg: '#eff6ff',      // Light blue
+          infoBorder: '#bfdbfe',
         },
       },
       fontFamily: {
-        sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+        heading: ['Bricolage Grotesque', 'sans-serif'],
+        sans: ['DM Sans', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
         mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'monospace'],
       },
     },

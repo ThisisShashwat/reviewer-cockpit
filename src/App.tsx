@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { Toaster, toast } from 'sonner';
 import {
   checkServerHealth,
@@ -33,6 +33,9 @@ export const App: React.FC = () => {
   const [activeProject, setActiveProject] = useState<CockpitProject | null>(null);
   const [auditHistory, setAuditHistory] = useState<AuditLogEntry[]>([]);
   const [gitHubData, setGitHubData] = useState<Partial<GitHubRepoData>>({ isLoading: true });
+
+  // Software Queue Lock: Keep reviewer focused strictly on the 100 software submissions
+  const [isSoftwareQueueLocked, setIsSoftwareQueueLocked] = useState(true);
 
   // Sync Modal
   const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
@@ -100,27 +103,52 @@ export const App: React.FC = () => {
     }
   }, [activeProjectId, projects]);
 
+  // Active navigation list depending on whether queue lock is active
+  const activeReviewList = useMemo(() => {
+    if (isSoftwareQueueLocked) {
+      const softwareOnly = projects.filter((p) => p.projectType === 'software');
+      return softwareOnly.length > 0 ? softwareOnly : projects;
+    }
+    return projects;
+  }, [projects, isSoftwareQueueLocked]);
+
   // Launch review mode for a project
   const handleStartReview = (project: CockpitProject) => {
+    // If selecting a software project, keep lock active; if selecting hardware, unlock
+    if (project.projectType === 'hardware') {
+      setIsSoftwareQueueLocked(false);
+    } else {
+      setIsSoftwareQueueLocked(true);
+    }
     setActiveProjectId(project.id);
     setCurrentPage('review');
   };
 
+  const handleStartSoftwareQueue = () => {
+    setIsSoftwareQueueLocked(true);
+    const softwareProjects = projects.filter((p) => p.projectType === 'software');
+    const firstPending = softwareProjects.find((p) => p.cockpitStatus === 'pending') || softwareProjects[0];
+    if (firstPending) {
+      setActiveProjectId(firstPending.id);
+      setCurrentPage('review');
+    }
+  };
+
   // Stepping through projects in Review mode
   const currentProjectIndex = activeProjectId
-    ? projects.findIndex((p) => p.id === activeProjectId)
+    ? activeReviewList.findIndex((p) => p.id === activeProjectId)
     : 0;
 
   const handleNextProject = () => {
-    if (currentProjectIndex < projects.length - 1) {
-      const next = projects[currentProjectIndex + 1];
+    if (currentProjectIndex < activeReviewList.length - 1) {
+      const next = activeReviewList[currentProjectIndex + 1];
       setActiveProjectId(next.id);
     }
   };
 
   const handlePrevProject = () => {
     if (currentProjectIndex > 0) {
-      const prev = projects[currentProjectIndex - 1];
+      const prev = activeReviewList[currentProjectIndex - 1];
       setActiveProjectId(prev.id);
     }
   };
@@ -138,7 +166,7 @@ export const App: React.FC = () => {
 
   return (
     <div className="h-screen w-screen flex flex-col bg-canvas text-content-primary overflow-hidden font-sans">
-      {/* Calm Persistent Top Navigation Bar */}
+      {/* Persistent Horizons Top Navigation Bar */}
       <TopNav
         currentPage={currentPage}
         onNavigate={(page) => setCurrentPage(page)}
@@ -160,6 +188,7 @@ export const App: React.FC = () => {
             projects={projects}
             stats={stats}
             onSelectProject={handleStartReview}
+            onStartSoftwareQueue={handleStartSoftwareQueue}
             isLoading={isLoading}
           />
         )}
@@ -167,8 +196,11 @@ export const App: React.FC = () => {
         {currentPage === 'review' && activeProject && (
           <ReviewPage
             project={activeProject}
-            currentIndex={currentProjectIndex}
-            totalProjects={projects.length}
+            allProjects={projects}
+            currentIndex={currentProjectIndex >= 0 ? currentProjectIndex : 0}
+            totalProjects={activeReviewList.length}
+            isSoftwareQueueLocked={isSoftwareQueueLocked}
+            onToggleQueueLock={() => setIsSoftwareQueueLocked((l) => !l)}
             onBackToQueue={() => setCurrentPage('queue')}
             onNextProject={handleNextProject}
             onPrevProject={handlePrevProject}
@@ -196,8 +228,8 @@ export const App: React.FC = () => {
         }}
       />
 
-      {/* Sonner Toast Notifications */}
-      <Toaster position="bottom-right" theme="dark" richColors />
+      {/* Sonner Toast Notifications (Light Theme) */}
+      <Toaster position="bottom-right" theme="light" richColors />
     </div>
   );
 };

@@ -3,6 +3,7 @@ import {
   Search,
   Clock,
   ArrowRight,
+  Lock,
 } from 'lucide-react';
 import { CockpitProject, CockpitStatus, QueueStats } from '../../lib/types';
 
@@ -10,6 +11,7 @@ interface QueuePageProps {
   projects: CockpitProject[];
   stats?: QueueStats;
   onSelectProject: (project: CockpitProject) => void;
+  onStartSoftwareQueue?: () => void;
   isLoading: boolean;
 }
 
@@ -17,6 +19,7 @@ export const QueuePage: React.FC<QueuePageProps> = ({
   projects,
   stats,
   onSelectProject,
+  onStartSoftwareQueue,
   isLoading,
 }) => {
   const [search, setSearch] = useState('');
@@ -51,6 +54,11 @@ export const QueuePage: React.FC<QueuePageProps> = ({
     return list;
   }, [projects, selectedStatus, selectedTrack, search]);
 
+  const softwareProjectsCount = useMemo(
+    () => projects.filter((p) => p.projectType === 'software').length,
+    [projects]
+  );
+
   // Keyboard navigation: j/k to move highlight, Enter to select
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -78,25 +86,25 @@ export const QueuePage: React.FC<QueuePageProps> = ({
     switch (status) {
       case 'pre_approved':
         return (
-          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-semantic-successBg text-semantic-success border border-semantic-success/20">
+          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-semantic-successBg text-semantic-success border border-semantic-successBorder">
             Pre-Approved
           </span>
         );
       case 'rejected':
         return (
-          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-semantic-dangerBg text-semantic-danger border border-semantic-danger/20">
+          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-semantic-dangerBg text-semantic-danger border border-semantic-dangerBorder">
             Rejected
           </span>
         );
       case 'flagged_fraud':
         return (
-          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-semantic-warningBg text-semantic-warning border border-semantic-warning/20">
+          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-semantic-warningBg text-semantic-warning border border-semantic-warningBorder">
             Flagged Fraud
           </span>
         );
       default:
         return (
-          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-semantic-infoBg text-semantic-info border border-semantic-info/20">
+          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-semantic-infoBg text-semantic-info border border-semantic-infoBorder">
             Pending
           </span>
         );
@@ -106,48 +114,58 @@ export const QueuePage: React.FC<QueuePageProps> = ({
   return (
     <div className="flex-1 flex flex-col bg-canvas overflow-hidden min-w-0">
       {/* Page Header Ribbon */}
-      <div className="px-8 pt-8 pb-6 border-b border-border-subtle bg-canvas-subtle shrink-0">
+      <div className="px-8 pt-7 pb-5 border-b border-border-subtle bg-canvas-card shrink-0">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
-            <h1 className="text-xl font-bold tracking-tight text-content-primary">
-              Submissions Queue
+            <h1 className="text-xl font-bold tracking-tight text-content-primary font-heading">
+              Live Submissions Queue
             </h1>
-            <p className="text-sm text-content-tertiary mt-1">
-              Select a project to launch the focused 6-step review cockpit.
+            <p className="text-xs text-content-tertiary mt-1">
+              Select a submission to launch the focused 6-step review cockpit.
             </p>
           </div>
 
-          {/* High-Level Metric Counter Strip */}
-          <div className="flex items-center gap-4 text-xs font-mono">
-            <div className="px-3 py-1.5 rounded-lg bg-canvas-card border border-border-subtle">
-              <span className="text-content-muted">Total: </span>
-              <span className="font-bold text-content-primary">{stats?.total ?? projects.length}</span>
-            </div>
-            <div className="px-3 py-1.5 rounded-lg bg-canvas-card border border-border-subtle">
-              <span className="text-content-muted">Pending: </span>
-              <span className="font-bold text-semantic-info">{stats?.pending ?? 0}</span>
-            </div>
-            <div className="px-3 py-1.5 rounded-lg bg-canvas-card border border-border-subtle">
-              <span className="text-content-muted">Pre-Approved: </span>
-              <span className="font-bold text-semantic-success">{stats?.preApproved ?? 0}</span>
-            </div>
-            <div className="px-3 py-1.5 rounded-lg bg-canvas-card border border-border-subtle">
-              <span className="text-content-muted">Rejected: </span>
-              <span className="font-bold text-semantic-danger">{stats?.rejected ?? 0}</span>
+          {/* Quick Software Review Action & Metrics */}
+          <div className="flex items-center gap-3">
+            {onStartSoftwareQueue && (
+              <button
+                type="button"
+                onClick={onStartSoftwareQueue}
+                className="px-4 py-2 rounded-lg bg-brand-orange hover:bg-orange-600 text-white text-xs font-semibold flex items-center gap-2 transition-colors shadow-sm"
+              >
+                <Lock className="w-3.5 h-3.5" />
+                <span>Review Software Queue ({softwareProjectsCount})</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            )}
+
+            <div className="hidden sm:flex items-center gap-2 text-xs font-mono">
+              <div className="px-2.5 py-1.5 rounded-lg bg-canvas-subtle border border-border-subtle">
+                <span className="text-content-tertiary">Total: </span>
+                <span className="font-bold text-content-primary">{stats?.total ?? projects.length}</span>
+              </div>
+              <div className="px-2.5 py-1.5 rounded-lg bg-canvas-subtle border border-border-subtle">
+                <span className="text-content-tertiary">Pending: </span>
+                <span className="font-bold text-semantic-info">{stats?.pending ?? 0}</span>
+              </div>
+              <div className="px-2.5 py-1.5 rounded-lg bg-canvas-subtle border border-border-subtle">
+                <span className="text-content-tertiary">Pre-Approved: </span>
+                <span className="font-bold text-semantic-success">{stats?.preApproved ?? 0}</span>
+              </div>
             </div>
           </div>
         </div>
 
         {/* Filter Controls & Live Search Bar */}
-        <div className="mt-6 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+        <div className="mt-5 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
           {/* Status Filters */}
-          <div className="flex items-center gap-1.5 bg-canvas-card p-1 rounded-lg border border-border-subtle text-xs">
+          <div className="flex items-center gap-1 bg-canvas-subtle p-1 rounded-lg border border-border-subtle text-xs">
             <button
               type="button"
               onClick={() => setSelectedStatus('all')}
-              className={`px-3 py-1.5 rounded-md font-medium transition-colors ${
+              className={`px-3 py-1 rounded-md font-medium transition-colors ${
                 selectedStatus === 'all'
-                  ? 'bg-canvas-elevated text-content-primary shadow-sm'
+                  ? 'bg-canvas-card text-content-primary shadow-sm font-semibold'
                   : 'text-content-tertiary hover:text-content-primary'
               }`}
             >
@@ -156,9 +174,9 @@ export const QueuePage: React.FC<QueuePageProps> = ({
             <button
               type="button"
               onClick={() => setSelectedStatus('pending')}
-              className={`px-3 py-1.5 rounded-md font-medium transition-colors ${
+              className={`px-3 py-1 rounded-md font-medium transition-colors ${
                 selectedStatus === 'pending'
-                  ? 'bg-canvas-elevated text-semantic-info shadow-sm'
+                  ? 'bg-canvas-card text-semantic-info shadow-sm font-semibold'
                   : 'text-content-tertiary hover:text-content-primary'
               }`}
             >
@@ -167,9 +185,9 @@ export const QueuePage: React.FC<QueuePageProps> = ({
             <button
               type="button"
               onClick={() => setSelectedStatus('pre_approved')}
-              className={`px-3 py-1.5 rounded-md font-medium transition-colors ${
+              className={`px-3 py-1 rounded-md font-medium transition-colors ${
                 selectedStatus === 'pre_approved'
-                  ? 'bg-canvas-elevated text-semantic-success shadow-sm'
+                  ? 'bg-canvas-card text-semantic-success shadow-sm font-semibold'
                   : 'text-content-tertiary hover:text-content-primary'
               }`}
             >
@@ -178,9 +196,9 @@ export const QueuePage: React.FC<QueuePageProps> = ({
             <button
               type="button"
               onClick={() => setSelectedStatus('rejected')}
-              className={`px-3 py-1.5 rounded-md font-medium transition-colors ${
+              className={`px-3 py-1 rounded-md font-medium transition-colors ${
                 selectedStatus === 'rejected'
-                  ? 'bg-canvas-elevated text-semantic-danger shadow-sm'
+                  ? 'bg-canvas-card text-semantic-danger shadow-sm font-semibold'
                   : 'text-content-tertiary hover:text-content-primary'
               }`}
             >
@@ -189,9 +207,9 @@ export const QueuePage: React.FC<QueuePageProps> = ({
             <button
               type="button"
               onClick={() => setSelectedStatus('flagged_fraud')}
-              className={`px-3 py-1.5 rounded-md font-medium transition-colors ${
+              className={`px-3 py-1 rounded-md font-medium transition-colors ${
                 selectedStatus === 'flagged_fraud'
-                  ? 'bg-canvas-elevated text-semantic-warning shadow-sm'
+                  ? 'bg-canvas-card text-semantic-warning shadow-sm font-semibold'
                   : 'text-content-tertiary hover:text-content-primary'
               }`}
             >
@@ -200,13 +218,13 @@ export const QueuePage: React.FC<QueuePageProps> = ({
           </div>
 
           {/* Track Filter */}
-          <div className="flex items-center gap-1 bg-canvas-card p-1 rounded-lg border border-border-subtle text-xs">
+          <div className="flex items-center gap-1 bg-canvas-subtle p-1 rounded-lg border border-border-subtle text-xs">
             <button
               type="button"
               onClick={() => setSelectedTrack('all')}
-              className={`px-2.5 py-1.5 rounded-md font-medium transition-colors ${
+              className={`px-2.5 py-1 rounded-md font-medium transition-colors ${
                 selectedTrack === 'all'
-                  ? 'bg-canvas-elevated text-content-primary shadow-sm'
+                  ? 'bg-canvas-card text-content-primary shadow-sm font-semibold'
                   : 'text-content-tertiary hover:text-content-primary'
               }`}
             >
@@ -215,30 +233,30 @@ export const QueuePage: React.FC<QueuePageProps> = ({
             <button
               type="button"
               onClick={() => setSelectedTrack('software')}
-              className={`px-2.5 py-1.5 rounded-md font-medium transition-colors ${
+              className={`px-2.5 py-1 rounded-md font-medium transition-colors ${
                 selectedTrack === 'software'
-                  ? 'bg-canvas-elevated text-blue-400 shadow-sm'
+                  ? 'bg-blue-50 text-blue-700 font-semibold shadow-sm'
                   : 'text-content-tertiary hover:text-content-primary'
               }`}
             >
-              Software
+              Software ({softwareProjectsCount})
             </button>
             <button
               type="button"
               onClick={() => setSelectedTrack('hardware')}
-              className={`px-2.5 py-1.5 rounded-md font-medium transition-colors ${
+              className={`px-2.5 py-1 rounded-md font-medium transition-colors ${
                 selectedTrack === 'hardware'
-                  ? 'bg-canvas-elevated text-purple-400 shadow-sm'
+                  ? 'bg-purple-50 text-purple-700 font-semibold shadow-sm'
                   : 'text-content-tertiary hover:text-content-primary'
               }`}
             >
-              Hardware
+              Hardware ({projects.length - softwareProjectsCount})
             </button>
           </div>
 
           {/* Search Box */}
-          <div className="relative flex-1 max-w-md">
-            <Search className="w-4 h-4 text-content-muted absolute left-3 top-1/2 -translate-y-1/2" />
+          <div className="relative flex-1 max-w-sm">
+            <Search className="w-3.5 h-3.5 text-content-muted absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
               value={search}
@@ -246,38 +264,38 @@ export const QueuePage: React.FC<QueuePageProps> = ({
                 setSearch(e.target.value);
                 setHighlightedIndex(0);
               }}
-              placeholder="Search projects, @github user, Hackatime ID..."
-              className="w-full bg-canvas-card border border-border-subtle rounded-lg pl-9 pr-4 py-1.5 text-xs text-content-primary placeholder:text-content-muted focus:outline-none focus:border-brand-orange"
+              placeholder="Search project, @github, Hackatime..."
+              className="w-full bg-canvas-subtle border border-border-subtle rounded-lg pl-8 pr-3 py-1.5 text-xs text-content-primary placeholder:text-content-muted focus:outline-none focus:border-brand-orange focus:bg-canvas-card transition-colors"
             />
           </div>
         </div>
       </div>
 
-      {/* Main Table of Real Projects */}
-      <div className="flex-1 overflow-y-auto px-8 py-4">
+      {/* Main Table of Genuine Live Submissions */}
+      <div className="flex-1 overflow-y-auto px-8 py-5">
         {isLoading ? (
-          <div className="py-24 text-center text-sm text-content-tertiary">
+          <div className="py-24 text-center text-xs text-content-tertiary">
             Loading submissions queue...
           </div>
         ) : filteredProjects.length === 0 ? (
-          <div className="py-24 text-center text-sm text-content-tertiary space-y-2">
+          <div className="py-24 text-center text-xs text-content-tertiary space-y-2">
             <p>No submissions match your filter or search query.</p>
           </div>
         ) : (
           <div className="border border-border-subtle rounded-xl overflow-hidden bg-canvas-card shadow-sm">
             <table className="w-full text-left border-collapse">
               <thead>
-                <tr className="border-b border-border-subtle bg-canvas-subtle text-xs text-content-tertiary uppercase tracking-wider font-semibold">
+                <tr className="border-b border-border-subtle bg-canvas-subtle text-[11px] text-content-tertiary uppercase tracking-wider font-semibold">
                   <th className="py-3 px-4">Submitter</th>
                   <th className="py-3 px-4">Project & Track</th>
-                  <th className="py-3 px-4">Requested</th>
+                  <th className="py-3 px-4">Claimed</th>
                   <th className="py-3 px-4">Hackatime ID</th>
                   <th className="py-3 px-4">Submitted</th>
                   <th className="py-3 px-4">Status</th>
                   <th className="py-3 px-4 text-right">Action</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-border-subtle text-sm">
+              <tbody className="divide-y divide-border-subtle text-xs">
                 {filteredProjects.map((p, idx) => {
                   const isHighlighted = idx === highlightedIndex;
                   const avatarUrl = p.githubUsername
@@ -290,9 +308,7 @@ export const QueuePage: React.FC<QueuePageProps> = ({
                       onClick={() => onSelectProject(p)}
                       onMouseEnter={() => setHighlightedIndex(idx)}
                       className={`cursor-pointer transition-colors ${
-                        isHighlighted
-                          ? 'bg-canvas-hover'
-                          : 'hover:bg-canvas-hover/60'
+                        isHighlighted ? 'bg-canvas-hover' : 'hover:bg-canvas-hover/60'
                       }`}
                     >
                       {/* Submitter */}
@@ -301,16 +317,16 @@ export const QueuePage: React.FC<QueuePageProps> = ({
                           <img
                             src={avatarUrl}
                             alt=""
-                            className="w-7 h-7 rounded-full bg-canvas border border-border-subtle object-cover"
+                            className="w-7 h-7 rounded-full bg-canvas border border-border-subtle object-cover shrink-0"
                             onError={(e) => {
                               (e.target as HTMLImageElement).src = `https://api.dicebear.com/7.x/identicon/svg?seed=${p.id}`;
                             }}
                           />
                           <div className="min-w-0">
-                            <span className="font-medium text-content-primary text-xs block truncate">
+                            <span className="font-semibold text-content-primary text-xs block truncate">
                               @{p.githubUsername || 'anonymous'}
                             </span>
-                            <span className="text-[11px] font-mono text-content-muted">
+                            <span className="text-[10px] font-mono text-content-muted">
                               {p.liveRecordId.slice(-6)}
                             </span>
                           </div>
@@ -320,43 +336,43 @@ export const QueuePage: React.FC<QueuePageProps> = ({
                       {/* Project Name & Track */}
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-2">
-                          <span className="font-semibold text-content-primary text-sm truncate max-w-xs">
+                          <span className="font-semibold text-content-primary text-xs truncate max-w-xs">
                             {p.projectName}
                           </span>
                           <span
-                            className={`px-2 py-0.5 rounded text-[11px] font-medium uppercase font-mono ${
+                            className={`px-2 py-0.2 rounded text-[10px] font-mono uppercase font-semibold ${
                               p.projectType === 'hardware'
-                                ? 'bg-purple-500/10 text-purple-300 border border-purple-500/20'
-                                : 'bg-blue-500/10 text-blue-300 border border-blue-500/20'
+                                ? 'bg-purple-50 text-purple-700 border border-purple-200'
+                                : 'bg-blue-50 text-blue-700 border border-blue-200'
                             }`}
                           >
                             {p.projectType}
                           </span>
                         </div>
-                        <p className="text-xs text-content-tertiary truncate max-w-md mt-0.5">
+                        <p className="text-[11px] text-content-tertiary truncate max-w-md mt-0.5">
                           {p.description || 'No description provided'}
                         </p>
                       </td>
 
                       {/* Requested Hours */}
-                      <td className="py-3 px-4 font-mono font-bold text-content-primary text-sm whitespace-nowrap">
+                      <td className="py-3 px-4 font-mono font-bold text-content-primary text-xs whitespace-nowrap">
                         {p.submittedHours} hrs
                       </td>
 
                       {/* Hackatime ID */}
                       <td className="py-3 px-4 whitespace-nowrap">
                         {p.hackatimeId ? (
-                          <span className="inline-flex items-center gap-1 font-mono text-xs text-content-secondary px-2 py-0.5 rounded bg-canvas border border-border-subtle">
-                            <Clock className="w-3 h-3 text-orange-400" />
+                          <span className="inline-flex items-center gap-1 font-mono text-[11px] text-content-secondary px-2 py-0.5 rounded bg-canvas-subtle border border-border-subtle">
+                            <Clock className="w-3 h-3 text-brand-orange" />
                             {p.hackatimeId}
                           </span>
                         ) : (
-                          <span className="text-xs text-content-muted">—</span>
+                          <span className="text-[11px] text-content-muted">—</span>
                         )}
                       </td>
 
                       {/* Submitted Date */}
-                      <td className="py-3 px-4 text-xs text-content-tertiary whitespace-nowrap">
+                      <td className="py-3 px-4 text-[11px] text-content-tertiary whitespace-nowrap">
                         {new Date(p.submittedAt).toLocaleDateString()}
                       </td>
 
@@ -373,10 +389,10 @@ export const QueuePage: React.FC<QueuePageProps> = ({
                             e.stopPropagation();
                             onSelectProject(p);
                           }}
-                          className="px-3.5 py-1.5 rounded-lg bg-canvas border border-border-subtle text-xs font-semibold text-content-primary hover:bg-brand-orange hover:text-white hover:border-brand-orange transition-colors inline-flex items-center gap-1.5 shadow-sm"
+                          className="px-3 py-1 rounded-lg bg-canvas-card border border-border-subtle text-xs font-semibold text-content-primary hover:bg-brand-orange hover:text-white hover:border-brand-orange transition-colors inline-flex items-center gap-1 shadow-sm"
                         >
                           <span>Review</span>
-                          <ArrowRight className="w-3.5 h-3.5" />
+                          <ArrowRight className="w-3 h-3" />
                         </button>
                       </td>
                     </tr>

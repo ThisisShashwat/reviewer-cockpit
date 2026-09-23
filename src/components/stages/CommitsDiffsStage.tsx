@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
-import ReactDiffViewer from 'react-diff-viewer-continued';
 import {
-  AlertOctagon,
+  AlertTriangle,
   ExternalLink,
   FileCode,
   GitCommit,
@@ -12,7 +11,9 @@ interface CommitsDiffsStageProps {
   project: CockpitProject;
   gitHubData?: Partial<GitHubRepoData>;
   onAdvance: () => void;
-  onEarlyExit: (reason: string) => void;
+  onEarlyExit?: (reason: string) => void;
+  reviewChecklist?: Record<string, boolean>;
+  onToggleChecklist?: (key: string) => void;
 }
 
 export const CommitsDiffsStage: React.FC<CommitsDiffsStageProps> = ({
@@ -20,38 +21,52 @@ export const CommitsDiffsStage: React.FC<CommitsDiffsStageProps> = ({
   gitHubData,
   onAdvance,
   onEarlyExit,
+  reviewChecklist = {},
+  onToggleChecklist,
 }) => {
   const [selectedCommitSha, setSelectedCommitSha] = useState<string | null>(null);
   const [diffViewMode, setDiffViewMode] = useState<'split' | 'unified'>('unified');
+  const [flagNote, setFlagNote] = useState('');
+  const [isFlagging, setIsFlagging] = useState(false);
 
   const commits = gitHubData?.commits || [];
   const totalAdditions = commits.reduce((acc, c) => acc + (c.additions || 0), 0);
   const totalDeletions = commits.reduce((acc, c) => acc + (c.deletions || 0), 0);
 
   const isSingleCommitDump = commits.length === 1 && totalAdditions > 3000;
-
   const selectedCommit = commits.find((c) => c.sha === selectedCommitSha) || commits[0];
 
+  const handleCheckbox = (key: string) => {
+    if (onToggleChecklist) {
+      onToggleChecklist(key);
+    }
+  };
+
   return (
-    <div className="h-full overflow-y-auto p-6 space-y-6 flex flex-col">
-      {/* Header */}
-      <div className="flex items-center justify-between pb-4 border-b border-rv-border shrink-0">
+    <div className="h-full overflow-y-auto p-8 space-y-6 max-w-5xl mx-auto flex flex-col">
+      {/* Stage Header */}
+      <div className="flex items-start justify-between pb-5 border-b border-border-subtle shrink-0">
         <div>
-          <h2 className="text-base font-bold text-rv-text flex items-center gap-2">
-            <GitCommit className="w-5 h-5 text-rv-accent" />
-            Stage 3: Git History & Differential Code Inspection
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-mono font-bold uppercase tracking-wider text-brand-orange bg-brand-orange/10 px-2 py-0.5 rounded border border-brand-orange/20">
+              Stage 3 of 5
+            </span>
+            <span className="text-xs text-content-tertiary">Git & Code Audit</span>
+          </div>
+          <h2 className="text-lg font-bold text-content-primary mt-1 font-heading">
+            Git Commit Progression & Differential Inspection
           </h2>
-          <p className="text-xs text-rv-dim mt-0.5">
-            Verify iterative commit progression and inspect changed files to weed out pre-made templates and unrefined code dumps.
+          <p className="text-xs text-content-tertiary mt-1 max-w-2xl">
+            Confirm authentic incremental commit progression and inspect modified files to identify pre-made templates or copied starter packages.
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 shrink-0">
           <div className="flex items-center gap-2 text-xs font-mono">
-            <span className="px-2.5 py-1 rounded-md bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-bold">
+            <span className="px-2.5 py-1 rounded-md bg-emerald-50 border border-emerald-200 text-semantic-success font-semibold">
               +{totalAdditions.toLocaleString()} lines
             </span>
-            <span className="px-2.5 py-1 rounded-md bg-red-500/10 border border-red-500/30 text-red-400 font-bold">
+            <span className="px-2.5 py-1 rounded-md bg-red-50 border border-red-200 text-semantic-danger font-semibold">
               -{totalDeletions.toLocaleString()} lines
             </span>
           </div>
@@ -60,7 +75,7 @@ export const CommitsDiffsStage: React.FC<CommitsDiffsStageProps> = ({
             href={`${project.codeUrl}/commits`}
             target="_blank"
             rel="noreferrer"
-            className="px-3 py-1.5 rounded-lg bg-rv-surface2 border border-rv-border text-xs font-semibold text-rv-text hover:bg-rv-surface3 flex items-center gap-1.5 transition-colors"
+            className="px-3 py-1.5 rounded-lg bg-canvas-card border border-border-subtle text-xs font-medium text-content-secondary hover:text-content-primary hover:bg-canvas-hover flex items-center gap-1.5 transition-colors shadow-sm"
           >
             <span>GitHub Commits</span>
             <ExternalLink className="w-3.5 h-3.5" />
@@ -68,49 +83,39 @@ export const CommitsDiffsStage: React.FC<CommitsDiffsStageProps> = ({
         </div>
       </div>
 
-      {/* Single Commit Dump Alert */}
+      {/* Single Commit Dump Notice */}
       {isSingleCommitDump && (
-        <div className="p-4 rounded-xl bg-red-950/40 border border-red-800/80 flex items-start justify-between gap-3 text-red-300 shrink-0">
-          <div className="flex items-start gap-3">
-            <AlertOctagon className="w-5 h-5 shrink-0 text-red-400 mt-0.5" />
-            <div>
-              <h4 className="text-xs font-bold uppercase tracking-wider text-red-200">
-                🚨 Massive Single-Commit Dump Detected ({totalAdditions.toLocaleString()} lines in 1 commit)
-              </h4>
-              <p className="text-xs mt-1 text-red-300/90 leading-relaxed">
-                Repository contains only one commit with over 3,000 lines of code. This strongly indicates copied starter code or pre-existing projects rather than iterative creation during the program.
-              </p>
-            </div>
+        <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 flex items-start gap-3 shrink-0">
+          <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+          <div className="text-xs leading-relaxed flex-1">
+            <span className="font-semibold block text-amber-950">
+              Single-Commit Package Dump Detected ({totalAdditions.toLocaleString()} lines)
+            </span>
+            <span>
+              Repository contains only one commit with over 3,000 lines. Verify whether this code was generated in one shot, cloned from a template, or represents true manual work.
+            </span>
           </div>
-          <button
-            type="button"
-            onClick={() =>
-              onEarlyExit(
-                `Single-Commit Mega-Dump: ${totalAdditions.toLocaleString()} lines committed all at once with zero iterative progression.`
-              )
-            }
-            className="px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 text-white text-xs font-bold shrink-0 transition-colors shadow-sm"
-          >
-            Reject: Single Dump
-          </button>
         </div>
       )}
 
-      {/* Main Commit Explorer: 2-Column (Timeline List + Selected Commit Inspector) */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 flex-1 min-h-[480px]">
-        {/* Left Column: Commit Timeline */}
-        <div className="lg:col-span-5 rounded-xl bg-rv-surface border border-rv-border flex flex-col overflow-hidden">
-          <div className="p-3 border-b border-rv-border bg-rv-surface2 flex items-center justify-between text-xs">
-            <span className="font-bold text-rv-text uppercase tracking-wider text-[11px]">
-              Recent Commits ({commits.length})
+      {/* Commit Explorer Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 flex-1 min-h-[440px]">
+        {/* Left column: Commits Timeline */}
+        <div className="lg:col-span-5 bg-canvas-card border border-border-subtle rounded-xl flex flex-col overflow-hidden shadow-sm">
+          <div className="p-3.5 bg-canvas-subtle border-b border-border-subtle flex items-center justify-between">
+            <span className="text-xs font-bold uppercase tracking-wider text-content-primary flex items-center gap-1.5">
+              <GitCommit className="w-4 h-4 text-brand-orange" />
+              Commit Timeline ({commits.length})
             </span>
-            <span className="text-[11px] text-rv-dim">Click commit to inspect files</span>
+            <span className="text-[11px] font-mono text-content-tertiary">
+              Click commit to inspect
+            </span>
           </div>
 
-          <div className="flex-1 overflow-y-auto divide-y divide-rv-border/50">
+          <div className="flex-1 overflow-y-auto divide-y divide-border-subtle">
             {commits.length === 0 ? (
-              <div className="p-6 text-center text-xs text-rv-dim">
-                No commits found or repository private.
+              <div className="p-8 text-center text-xs text-content-tertiary">
+                No recent commits retrieved or repository is empty.
               </div>
             ) : (
               commits.map((c) => {
@@ -120,33 +125,30 @@ export const CommitsDiffsStage: React.FC<CommitsDiffsStageProps> = ({
                     key={c.sha}
                     type="button"
                     onClick={() => setSelectedCommitSha(c.sha)}
-                    className={`w-full text-left p-3.5 transition-colors flex items-start gap-3 ${
+                    className={`w-full text-left p-3.5 transition-colors block ${
                       isSelected
-                        ? 'bg-rv-accent/15 border-l-4 border-l-rv-accent'
-                        : 'hover:bg-rv-surface2/60'
+                        ? 'bg-canvas-hover border-l-2 border-l-brand-orange'
+                        : 'hover:bg-canvas-hover/60'
                     }`}
                   >
-                    <GitCommit
-                      className={`w-4 h-4 shrink-0 mt-0.5 ${
-                        isSelected ? 'text-rv-accent' : 'text-rv-muted'
-                      }`}
-                    />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-semibold text-rv-text truncate">
-                        {c.message || 'No commit message'}
-                      </p>
-                      <div className="mt-1 flex items-center gap-2 text-[11px] text-rv-dim font-mono">
-                        <span className="text-rv-accent">{c.shortSha}</span>
-                        <span>&bull;</span>
-                        <span className="truncate">{c.author}</span>
-                        <span>&bull;</span>
-                        <span>{new Date(c.date).toLocaleDateString()}</span>
-                      </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-mono font-bold text-content-primary truncate">
+                        {c.shortSha}
+                      </span>
+                      <span className="text-[11px] text-content-tertiary">
+                        {c.date ? new Date(c.date).toLocaleDateString() : ''}
+                      </span>
                     </div>
-
-                    <div className="text-[11px] font-mono shrink-0 flex items-center gap-1.5">
-                      <span className="text-emerald-400">+{c.additions || 0}</span>
-                      <span className="text-red-400">-{c.deletions || 0}</span>
+                    <p className="text-xs font-medium text-content-secondary line-clamp-2 mt-1">
+                      {c.message}
+                    </p>
+                    <div className="flex items-center gap-2 mt-2 text-[11px] font-mono text-content-tertiary">
+                      <span>{c.author}</span>
+                      <span>·</span>
+                      <span className="text-semantic-success">+{c.additions}</span>
+                      <span className="text-semantic-danger">-{c.deletions}</span>
+                      <span>·</span>
+                      <span>{c.files?.length || 0} files</span>
                     </div>
                   </button>
                 );
@@ -155,137 +157,160 @@ export const CommitsDiffsStage: React.FC<CommitsDiffsStageProps> = ({
           </div>
         </div>
 
-        {/* Right Column: Detailed Diff Inspector */}
-        <div className="lg:col-span-7 rounded-xl bg-rv-surface border border-rv-border flex flex-col overflow-hidden">
-          <div className="p-3 border-b border-rv-border bg-rv-surface2 flex items-center justify-between text-xs">
-            <div className="flex items-center gap-2">
-              <span className="font-bold text-rv-text">
-                Commit {selectedCommit?.shortSha || 'Details'}
-              </span>
-              {selectedCommit?.htmlUrl && (
-                <a
-                  href={selectedCommit.htmlUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-rv-accent hover:underline flex items-center gap-1 text-[11px]"
-                >
-                  GitHub <ExternalLink className="w-3 h-3" />
-                </a>
-              )}
-            </div>
-
-            <div className="flex items-center gap-1 bg-rv-surface rounded-lg p-0.5 border border-rv-border">
-              <button
-                type="button"
-                onClick={() => setDiffViewMode('unified')}
-                className={`px-2 py-0.5 rounded text-[11px] font-medium ${
-                  diffViewMode === 'unified' ? 'bg-rv-accent text-white' : 'text-rv-dim'
-                }`}
-              >
-                Unified
-              </button>
-              <button
-                type="button"
-                onClick={() => setDiffViewMode('split')}
-                className={`px-2 py-0.5 rounded text-[11px] font-medium ${
-                  diffViewMode === 'split' ? 'bg-rv-accent text-white' : 'text-rv-dim'
-                }`}
-              >
-                Split
-              </button>
-            </div>
-          </div>
-
-          <div className="p-4 flex-1 overflow-y-auto space-y-4">
-            {selectedCommit ? (
-              <>
-                <div className="p-3 rounded-lg bg-rv-surface2 border border-rv-border space-y-1">
-                  <h4 className="text-xs font-bold text-rv-text">
-                    {selectedCommit.message}
-                  </h4>
-                  <p className="text-[11px] text-rv-dim font-mono">
-                    Author: {selectedCommit.author} &bull; Date: {new Date(selectedCommit.date).toLocaleString()}
-                  </p>
+        {/* Right column: Selected Commit Inspector */}
+        <div className="lg:col-span-7 bg-canvas-card border border-border-subtle rounded-xl flex flex-col overflow-hidden shadow-sm">
+          {selectedCommit ? (
+            <>
+              <div className="p-3.5 bg-canvas-subtle border-b border-border-subtle flex items-center justify-between">
+                <div className="min-w-0 pr-2">
+                  <span className="text-xs font-bold font-mono text-content-primary block truncate">
+                    Commit {selectedCommit.shortSha}: {selectedCommit.message}
+                  </span>
+                  <span className="text-[11px] text-content-tertiary">
+                    {selectedCommit.author} committed on {selectedCommit.date ? new Date(selectedCommit.date).toLocaleString() : 'unknown date'}
+                  </span>
                 </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setDiffViewMode(diffViewMode === 'unified' ? 'split' : 'unified')}
+                    className="px-2 py-1 rounded bg-canvas-card border border-border-subtle text-[11px] font-mono text-content-secondary hover:text-content-primary"
+                  >
+                    {diffViewMode === 'unified' ? 'Unified' : 'Split'}
+                  </button>
+                  <a
+                    href={selectedCommit.htmlUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="p-1 text-content-tertiary hover:text-content-primary"
+                    title="Open on GitHub"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                </div>
+              </div>
 
-                {/* Changed Files List */}
-                <div>
-                  <h5 className="text-[11px] font-semibold text-rv-muted uppercase tracking-wider mb-2">
-                    Changed Files ({selectedCommit.files?.length || 0})
-                  </h5>
+              {/* Modified Files in Commit */}
+              <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-content-tertiary block">
+                  Files Changed ({selectedCommit.files?.length || 0})
+                </span>
+
+                {selectedCommit.files && selectedCommit.files.length > 0 ? (
                   <div className="space-y-1.5">
-                    {(selectedCommit.files || []).map((file, idx) => (
+                    {selectedCommit.files.map((file: any, idx: number) => (
                       <div
                         key={idx}
-                        className="p-2.5 rounded-lg bg-rv-bg border border-rv-border flex items-center justify-between text-xs font-mono"
+                        className="flex items-center justify-between p-2 rounded-lg bg-canvas-subtle border border-border-subtle text-xs"
                       >
-                        <div className="flex items-center gap-2 truncate">
-                          <FileCode className="w-3.5 h-3.5 text-rv-accent shrink-0" />
-                          <span className="text-rv-text truncate">{file.filename}</span>
+                        <div className="flex items-center gap-2 min-w-0">
+                          <FileCode className="w-3.5 h-3.5 text-content-tertiary shrink-0" />
+                          <span className="font-mono text-content-primary truncate text-[11px]">
+                            {file.filename}
+                          </span>
                         </div>
-                        <div className="flex items-center gap-2 shrink-0 text-[11px]">
-                          <span className="text-emerald-400">+{file.additions}</span>
-                          <span className="text-red-400">-{file.deletions}</span>
+                        <div className="flex items-center gap-2 font-mono text-[11px] shrink-0">
+                          <span className="text-semantic-success">+{file.additions}</span>
+                          <span className="text-semantic-danger">-{file.deletions}</span>
                         </div>
                       </div>
                     ))}
                   </div>
-                </div>
-
-                {/* Visual Diff Preview Box */}
-                <div className="rounded-lg overflow-hidden border border-rv-border text-xs">
-                  <ReactDiffViewer
-                    oldValue="// Previous commit state\nconst app = initialize();"
-                    newValue={`// Commit: ${selectedCommit.message}\nconst app = initialize();\n// Changes: +${selectedCommit.additions} -${selectedCommit.deletions} lines\napp.start();`}
-                    splitView={diffViewMode === 'split'}
-                    useDarkTheme={true}
-                    styles={{
-                      variables: {
-                        dark: {
-                          diffViewerBackground: '#121212',
-                          diffViewerColor: '#f4f4f5',
-                          addedBackground: '#064e3b',
-                          addedColor: '#a7f3d0',
-                          removedBackground: '#7f1d1d',
-                          removedColor: '#fecaca',
-                          wordAddedBackground: '#047857',
-                          wordRemovedBackground: '#991b1b',
-                          gutterBackground: '#18181b',
-                          gutterBackgroundDark: '#18181b',
-                          highlightBackground: '#2a2a2a',
-                          highlightGutterBackground: '#2a2a2a',
-                        },
-                      },
-                    }}
-                  />
-                </div>
-              </>
-            ) : (
-              <div className="py-12 text-center text-xs text-rv-dim">
-                Select a commit on the left to inspect file changes.
+                ) : (
+                  <div className="text-xs text-content-tertiary py-4">
+                    Individual file list details unavailable for this commit.
+                  </div>
+                )}
               </div>
-            )}
-          </div>
+            </>
+          ) : (
+            <div className="flex-1 flex items-center justify-center text-xs text-content-tertiary">
+              Select a commit from the timeline on the left to inspect changed files.
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Advance Footer */}
-      <div className="pt-2 flex items-center justify-between border-t border-rv-border shrink-0">
-        <button
-          type="button"
-          onClick={() => onEarlyExit('Single-commit boilerplate code dump')}
-          className="px-3.5 py-2 rounded-lg bg-rv-surface2 border border-rv-border text-red-400 hover:bg-red-950/40 hover:border-red-800 text-xs font-semibold flex items-center gap-1.5 transition-colors"
-        >
-          <AlertOctagon className="w-3.5 h-3.5" />
-          <span>Flag Code Dump</span>
-        </button>
+      {/* Reviewer Compliance Checks */}
+      <div className="p-5 rounded-xl bg-canvas-card border border-border-subtle space-y-3 shadow-sm shrink-0">
+        <h3 className="text-xs font-bold uppercase tracking-wider text-content-primary">
+          Reviewer Compliance Checks
+        </h3>
+        <div className="space-y-2 text-xs">
+          <label className="flex items-center gap-2.5 cursor-pointer select-none p-2 rounded-lg hover:bg-canvas-hover transition-colors">
+            <input
+              type="checkbox"
+              checked={Boolean(reviewChecklist['stage3_incremental_commits'])}
+              onChange={() => handleCheckbox('stage3_incremental_commits')}
+              className="rounded border-border text-brand-orange focus:ring-brand-orange w-4 h-4"
+            />
+            <span className="text-content-secondary font-medium">
+              Code shows meaningful incremental commits rather than a single pre-built code dump
+            </span>
+          </label>
+
+          <label className="flex items-center gap-2.5 cursor-pointer select-none p-2 rounded-lg hover:bg-canvas-hover transition-colors">
+            <input
+              type="checkbox"
+              checked={Boolean(reviewChecklist['stage3_dates_match'])}
+              onChange={() => handleCheckbox('stage3_dates_match')}
+              className="rounded border-border text-brand-orange focus:ring-brand-orange w-4 h-4"
+            />
+            <span className="text-content-secondary font-medium">
+              Commit timestamps correspond with tracked Hackatime heartbeats
+            </span>
+          </label>
+        </div>
+      </div>
+
+      {/* Reviewer Action Bar */}
+      <div className="pt-4 flex items-center justify-between border-t border-border-subtle shrink-0">
+        {isFlagging ? (
+          <div className="flex items-center gap-2 flex-1 max-w-md mr-4">
+            <input
+              type="text"
+              value={flagNote}
+              onChange={(e) => setFlagNote(e.target.value)}
+              placeholder="Reason for git/commit concern..."
+              className="text-xs px-3 py-1.5 rounded-lg border border-border bg-canvas-card text-content-primary flex-1 focus:outline-none focus:border-brand-orange"
+            />
+            <button
+              type="button"
+              onClick={() => {
+                if (onEarlyExit && flagNote.trim()) {
+                  onEarlyExit(`Git Concern: ${flagNote.trim()}`);
+                }
+                setIsFlagging(false);
+              }}
+              className="px-3 py-1.5 rounded-lg bg-semantic-danger text-white text-xs font-semibold hover:bg-red-700 transition-colors shrink-0"
+            >
+              Confirm Flag
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsFlagging(false)}
+              className="px-2.5 py-1.5 text-xs text-content-tertiary hover:text-content-primary"
+            >
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setIsFlagging(true)}
+            className="px-3.5 py-2 rounded-lg bg-canvas-card border border-border-subtle text-xs font-semibold text-content-secondary hover:text-semantic-danger hover:border-semantic-dangerBorder transition-colors flex items-center gap-1.5 shadow-sm"
+          >
+            <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
+            <span>Flag Git Anomaly</span>
+          </button>
+        )}
 
         <button
           type="button"
           onClick={onAdvance}
-          className="px-5 py-2 rounded-lg bg-rv-accent text-white hover:bg-rv-accent/90 text-xs font-bold transition-all shadow-md flex items-center gap-1.5"
+          className="px-5 py-2 rounded-lg bg-brand-orange text-white hover:bg-orange-600 text-xs font-semibold transition-colors shadow-sm flex items-center gap-1.5"
         >
-          <span>Pass Commits & Go to Stage 4 (AI & Quality) →</span>
+          <span>Continue to AI & Quality →</span>
         </button>
       </div>
     </div>
