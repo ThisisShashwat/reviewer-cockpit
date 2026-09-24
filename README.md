@@ -1,6 +1,10 @@
 # reviewer cockpit
 
-local review dashboard for hack club horizons submissions.
+local review dashboard for hack club live submissions.
+
+## video demo
+
+https://github.com/user-attachments/assets/1065cd61-caad-41b8-aedb-90066d2882bd
 
 ## setup
 
