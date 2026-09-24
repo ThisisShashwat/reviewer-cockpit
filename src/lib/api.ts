@@ -10,6 +10,7 @@
 import {
   AuditLogEntry,
   CockpitProject,
+  GitHubCommit,
   GitHubRepoData,
   HackatimeProjectStats,
   HalceonProfileData,
@@ -19,6 +20,8 @@ import {
   SubmitVerdictRequest,
   VerdictDetails,
   ArchiveCommitInfo,
+  GitHubUserRepo,
+  UserNote,
 } from './types';
 
 /**
@@ -177,21 +180,48 @@ export async function fetchGitHubRepoData(codeUrl: string): Promise<Partial<GitH
       repoJson = await repoRes.json();
     }
 
-    // 2. Fetch Commits list (last 15)
+    // 2. Fetch all commits with pagination (up to 300 commits)
     let commits: GitHubRepoData['commits'] = [];
     if (!isRateLimited) {
       try {
-        const commitsRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/commits?per_page=15`, { headers });
-        updateRateLimit(commitsRes);
+        const allRawCommits: any[] = [];
+        let page = 1;
+        const perPage = 100;
+        const maxPages = 3; // Up to 300 commits
 
-        if (commitsRes.status === 403) {
-          isRateLimited = true;
-        } else if (commitsRes.ok) {
+        while (page <= maxPages) {
+          const commitsRes = await fetch(
+            `https://api.github.com/repos/${owner}/${repo}/commits?per_page=${perPage}&page=${page}`,
+            { headers }
+          );
+          updateRateLimit(commitsRes);
+
+          if (commitsRes.status === 403) {
+            isRateLimited = true;
+            break;
+          }
+          if (!commitsRes.ok) break;
+
           const commitsJson = await commitsRes.json();
-          
-          // Fetch detailed stats (additions, deletions, files) for top 8 commits
-          commits = await Promise.all(
-            (commitsJson || []).slice(0, 8).map(async (c: any) => {
+          if (!Array.isArray(commitsJson) || commitsJson.length === 0) break;
+
+          allRawCommits.push(...commitsJson);
+          if (commitsJson.length < perPage) break;
+          page++;
+        }
+
+        // Fetch detailed stats (additions, deletions, files) for commits
+        // Process in concurrent batches of 15 to stay fast and avoid socket exhaustion
+        const BATCH_SIZE = 15;
+        const detailedCommits: GitHubCommit[] = [];
+
+        // For repos up to 100 commits, fetch details for all. For repos > 100 commits, fetch details for top 100
+        const commitsToDetail = allRawCommits.slice(0, 100);
+
+        for (let i = 0; i < commitsToDetail.length; i += BATCH_SIZE) {
+          const chunk = commitsToDetail.slice(i, i + BATCH_SIZE);
+          const chunkResults = await Promise.all(
+            chunk.map(async (c: any) => {
               let additions = 0;
               let deletions = 0;
               let files: any[] = [];
@@ -216,14 +246,15 @@ export async function fetchGitHubRepoData(codeUrl: string): Promise<Partial<GitH
                     filename: f.filename,
                     additions: f.additions,
                     deletions: f.deletions,
-                    status: f.status
+                    status: f.status,
+                    patch: f.patch || undefined,
                   }));
                 }
               } catch {
                 // detail fetch non-fatal
               }
 
-              const commitObj = {
+              const commitObj: GitHubCommit = {
                 sha: c.sha,
                 shortSha: (c.sha || '').substring(0, 7),
                 message: c.commit?.message || '',
@@ -232,13 +263,32 @@ export async function fetchGitHubRepoData(codeUrl: string): Promise<Partial<GitH
                 htmlUrl,
                 additions,
                 deletions,
-                files
+                files,
               };
               commitDetailCache.set(commitCacheKey, commitObj);
               return commitObj;
             })
           );
+          detailedCommits.push(...chunkResults);
         }
+
+        // For any remaining commits beyond 100, add them with metadata so they appear in timeline and count
+        if (allRawCommits.length > 100) {
+          const remaining = allRawCommits.slice(100).map((c: any) => ({
+            sha: c.sha,
+            shortSha: (c.sha || '').substring(0, 7),
+            message: c.commit?.message || '',
+            author: c.commit?.author?.name || c.author?.login || 'Unknown',
+            date: c.commit?.author?.date || '',
+            htmlUrl: c.html_url || `https://github.com/${owner}/${repo}/commit/${c.sha}`,
+            additions: 0,
+            deletions: 0,
+            files: [],
+          }));
+          detailedCommits.push(...remaining);
+        }
+
+        commits = detailedCommits;
       } catch {
         // Commits fetch non-fatal
       }
@@ -703,9 +753,22 @@ export async function fetchCockpitProject(id: string): Promise<{
   return res.json();
 }
 
+export interface BackupInfo {
+  created: boolean;
+  filename: string;
+  filePath: string;
+  milestone: number;
+}
+
 export async function submitCockpitVerdict(
   payload: SubmitVerdictRequest
-): Promise<{ ok: boolean; verdict: VerdictDetails; project: CockpitProject; stats: QueueStats }> {
+): Promise<{
+  ok: boolean;
+  verdict: VerdictDetails;
+  project: CockpitProject;
+  stats: QueueStats;
+  backupInfo?: BackupInfo;
+}> {
   const res = await fetch('/api/verdicts', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -714,6 +777,34 @@ export async function submitCockpitVerdict(
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
     throw new Error(err.error || 'Failed to submit verdict');
+  }
+  return res.json();
+}
+
+export async function fetchBackupsList(): Promise<{
+  ok: boolean;
+  backups: Array<{ filename: string; size: number; createdAt: string; milestone?: number }>;
+}> {
+  const res = await fetch('/api/backups');
+  if (!res.ok) throw new Error('Failed to fetch backups');
+  return res.json();
+}
+
+export async function triggerManualBackup(): Promise<{ ok: boolean; backup: { filename: string; filePath: string } }> {
+  const res = await fetch('/api/backups/create', { method: 'POST' });
+  if (!res.ok) throw new Error('Failed to create backup');
+  return res.json();
+}
+
+export async function markProjectCompletedPreApproved(
+  projectId: string
+): Promise<{ ok: boolean; project: CockpitProject; stats: QueueStats }> {
+  const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/complete-preapproval`, {
+    method: 'POST',
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(err.error || 'Failed to mark project as completed');
   }
   return res.json();
 }
@@ -765,3 +856,132 @@ export async function fetchCockpitStats(): Promise<QueueStats> {
   if (!res.ok) throw new Error(`Failed to fetch stats: ${res.statusText}`);
   return res.json();
 }
+
+/**
+ * In-memory cache for user's public repositories
+ */
+const userReposCache = new Map<string, { repos: GitHubUserRepo[]; totalCount: number }>();
+
+export async function fetchGitHubUserRepos(
+  username: string
+): Promise<{ repos: GitHubUserRepo[]; totalCount: number; isRateLimited?: boolean; error?: string }> {
+  if (!username || !username.trim()) {
+    return { repos: [], totalCount: 0 };
+  }
+  const cleanUser = username.trim().toLowerCase();
+  const cached = userReposCache.get(cleanUser);
+  if (cached) {
+    return cached;
+  }
+
+  const headers = getGitHubHeaders();
+  try {
+    const res = await fetch(
+      `https://api.github.com/users/${encodeURIComponent(cleanUser)}/repos?sort=updated&per_page=60`,
+      { headers }
+    );
+    updateRateLimit(res);
+
+    if (res.status === 403) {
+      return { repos: [], totalCount: 0, isRateLimited: true, error: 'GitHub rate limit exceeded' };
+    }
+    if (res.status === 404) {
+      return { repos: [], totalCount: 0, error: `GitHub user @${cleanUser} not found` };
+    }
+    if (!res.ok) {
+      return { repos: [], totalCount: 0, error: `GitHub error: ${res.statusText}` };
+    }
+
+    const json = await res.json();
+    const repos: GitHubUserRepo[] = (Array.isArray(json) ? json : []).map((r: any) => ({
+      id: r.id,
+      name: r.name,
+      fullName: r.full_name || r.name,
+      htmlUrl: r.html_url || `https://github.com/${cleanUser}/${r.name}`,
+      description: r.description || null,
+      language: r.language || null,
+      stars: r.stargazers_count || 0,
+      forks: r.forks_count || 0,
+      isFork: Boolean(r.fork),
+      createdAt: r.created_at || '',
+      updatedAt: r.updated_at || '',
+      pushedAt: r.pushed_at || '',
+      size: r.size || 0,
+    }));
+
+    const result = { repos, totalCount: repos.length };
+    userReposCache.set(cleanUser, result);
+    return result;
+  } catch (err: any) {
+    return { repos: [], totalCount: 0, error: err.message || 'Network error fetching repositories' };
+  }
+}
+
+/**
+ * Fetch persistent notes for a specific submitter across all their projects
+ */
+export async function fetchUserNotes(username: string): Promise<UserNote[]> {
+  const clean = username.trim().toLowerCase();
+  if (!clean) return [];
+  try {
+    const res = await fetch(`/api/users/${encodeURIComponent(clean)}/notes`);
+    if (!res.ok) return [];
+    const json = await res.json();
+    return json.notes || [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Save a persistent note for a specific submitter
+ */
+export async function saveUserNote(
+  username: string,
+  text: string,
+  author = 'Reviewer'
+): Promise<UserNote | null> {
+  const clean = username.trim().toLowerCase();
+  if (!clean || !text.trim()) return null;
+  try {
+    const res = await fetch(`/api/users/${encodeURIComponent(clean)}/notes`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: text.trim(), author }),
+    });
+    if (!res.ok) return null;
+    const json = await res.json();
+    return json.note || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Generate an AI-Engineered search query for plagiarism / tutorial detection
+ * Powered by google/gemini-3.8-flash via Hack Club AI proxy
+ */
+export async function generateAiSearchQuery(params: {
+  projectName: string;
+  description?: string;
+  language?: string;
+  files?: string[];
+  readmeSnippet?: string;
+}): Promise<string> {
+  try {
+    const res = await fetch('/api/ai/engineer-query', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params),
+    });
+    if (!res.ok) {
+      throw new Error(`AI proxy returned HTTP ${res.status}`);
+    }
+    const data = await res.json();
+    return data.query || `${params.projectName} tutorial`;
+  } catch (err) {
+    console.error('Failed to generate AI search query:', err);
+    throw err;
+  }
+}
+

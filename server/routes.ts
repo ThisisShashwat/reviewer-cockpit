@@ -14,39 +14,183 @@ import {
 export const apiRouter = Router();
 
 /**
+ * Formats a clean commit breakdown string for copy-pasting.
+ * Rules:
+ * 1. If cosmetic & boilerplate and other types are under 10% and code commit is 90%+, do NOT mention them.
+ * 2. If a non-code category (cosmetic, boilerplate) has 0, 1, or 2 commits, do NOT mention it.
+ */
+function formatCommitsSummary(
+  codeCount: number,
+  cosmeticCount: number = 0,
+  boilerplateCount: number = 0
+): string {
+  const total = codeCount + cosmeticCount + boilerplateCount;
+  if (total === 0) {
+    return "0 code related commits";
+  }
+
+  const codeRatio = codeCount / total;
+  const isHighCodeConcentration = codeRatio >= 0.9;
+  const nonCodeCount = cosmeticCount + boilerplateCount;
+
+  if (isHighCodeConcentration && nonCodeCount / total < 0.1) {
+    return `${codeCount} code related commit${codeCount === 1 ? "" : "s"}`;
+  }
+
+  const parts = [`${codeCount} code related commit${codeCount === 1 ? "" : "s"}`];
+
+  const cosmeticRatio = cosmeticCount / total;
+  const shouldOmitCosmetic =
+    cosmeticCount <= 2 || (isHighCodeConcentration && cosmeticRatio < 0.1);
+
+  if (!shouldOmitCosmetic && cosmeticCount > 0) {
+    parts.push(`${cosmeticCount} cosmetic commit${cosmeticCount === 1 ? "" : "s"}`);
+  }
+
+  const boilerplateRatio = boilerplateCount / total;
+  const shouldOmitBoilerplate =
+    boilerplateCount <= 2 || (isHighCodeConcentration && boilerplateRatio < 0.1);
+
+  if (!shouldOmitBoilerplate && boilerplateCount > 0) {
+    parts.push(`${boilerplateCount} boilerplate commit${boilerplateCount === 1 ? "" : "s"}`);
+  }
+
+  return parts.join(", ");
+}
+
+/**
  * Formats a standardized GitBook-compliant justification string for admin clipboard
  */
 function formatClipboardJustification(project: CockpitProject, verdict: VerdictDetails): string {
   const lines: string[] = [];
 
-  const verdictUpper = verdict.action === "pre_approve" ? "PRE-APPROVED" : "REJECTED";
-  lines.push(`[COCKPIT ${verdictUpper}] Recommended Hours: ${verdict.approvedHours}h`);
-  if (verdict.deflatedHours > 0) {
-    lines.push(`(Deflated by ${verdict.deflatedHours}h from requested ${project.submittedHours}h)`);
-  }
-  lines.push("");
+  lines.push(`Project: ${project.projectName || "Unnamed"}`);
+  lines.push(`Hackatime ID: ${project.hackatimeId || project.id || "N/A"}`);
 
-  if (project.hackatimeId) {
-    lines.push(`• Submitter Hackatime ID: ${project.hackatimeId}`);
-  }
-  if (project.hackatimeProjects) {
-    lines.push(`• Tracked Project(s): ${project.hackatimeProjects}`);
-  }
-  lines.push(`• Code URL: ${project.codeUrl}`);
-  lines.push(`• Playable / Demo URL: ${project.playableUrl}`);
-  lines.push("");
+  const applied = verdict.appliedChecklist || {};
+  const expMap: Record<string, string> = {
+    beginner: "Beginner",
+    intermediate: "Intermediate",
+    advanced: "Advanced",
+    highly_experienced: "Highly Experienced / Pro",
+  };
+  const expText = applied.submitter_experience_level
+    ? expMap[applied.submitter_experience_level] || applied.submitter_experience_level
+    : "Uncalibrated";
+  lines.push(`Experience: ${expText}`);
 
-  lines.push("Justification & Technical Verification:");
-  lines.push(verdict.hoursJustification || "Verified project delivers working code and matches tracked velocity.");
+  // Shipped status
+  const shippedFailures: string[] = [];
+  if (applied.shipped_name_valid === false) shippedFailures.push("Missing project title");
+  if (applied.shipped_code_valid === false) shippedFailures.push("Missing GitHub repository");
+  if (applied.shipped_desc_valid === false) shippedFailures.push("Missing description");
+  if (applied.shipped_screenshot_valid === false) shippedFailures.push("Missing deliverable screenshot");
+  if (applied.shipped_readme_status === "fail" || applied.shipped_readme_valid === false) {
+    shippedFailures.push("Missing README");
+  } else if (applied.shipped_readme_status === "low_quality") {
+    shippedFailures.push("Low quality README");
+  } else if (applied.shipped_readme_status === "ai_generated") {
+    shippedFailures.push("AI-generated README");
+  }
+  if (applied.shipped_playable_status === "disallowed_host" || applied.shipped_host_compliant === false) {
+    shippedFailures.push("Disallowed host: Streamlit/Replit/Drive");
+  } else if (applied.shipped_playable_status === "broken") {
+    shippedFailures.push("Playable demo broken/crashing");
+  } else if (applied.shipped_playable_status === "fail" || applied.shipped_playable_valid === false) {
+    shippedFailures.push("Missing playable demo");
+  } else if (applied.shipped_playable_status === "needs_video") {
+    shippedFailures.push("Video proof required");
+  }
 
-  if (verdict.publicFeedback) {
+  if (shippedFailures.length === 0) {
+    lines.push("Shipped: Yes");
+  } else {
+    lines.push(`Shipped: No (${shippedFailures.join(", ")})`);
+  }
+
+  // Commits breakdown (directly after Shipped)
+  let commitsSummary = applied.commits_summary;
+  if (applied.code_commits_count !== undefined || applied.cosmetic_commits_count !== undefined) {
+    commitsSummary = formatCommitsSummary(
+      applied.code_commits_count || 0,
+      applied.cosmetic_commits_count || 0,
+      applied.boilerplate_commits_count || 0
+    );
+  } else if (!commitsSummary) {
+    commitsSummary = "0 code related commits";
+  } else {
+    commitsSummary = commitsSummary
+      .replace(/,\s*0 cosmetic commits?/gi, "")
+      .replace(/,\s*1 cosmetic commits?/gi, "")
+      .replace(/,\s*2 cosmetic commits?/gi, "")
+      .replace(/,\s*0 boilerplate commits?/gi, "")
+      .replace(/,\s*1 boilerplate commits?/gi, "")
+      .replace(/,\s*2 boilerplate commits?/gi, "");
+  }
+  lines.push(`Commits: ${commitsSummary}`);
+
+  // Verdict: Accepted / Rejected & deflated hours
+  const isDeflated = verdict.action === "pre_approve" && (verdict.approvedHours < project.submittedHours || (verdict.deflatedHours ?? 0) > 0);
+  const verdictText = verdict.action === "pre_approve"
+    ? (isDeflated ? `Accepted (deflated from ${project.submittedHours} hrs to ${verdict.approvedHours} hrs)` : "Accepted")
+    : verdict.action === "flag_fraud"
+    ? "Rejected (Fraud)"
+    : "Rejected";
+  lines.push(`Verdict: ${verdictText}`);
+
+  // Failed checklists (strictly what failed; no passed, no skipped)
+  const failedList: string[] = [];
+  if (applied.stage1_double_dip_checked === false || applied.zero_progress_blocked === true) {
+    failedList.push("- Double-Dip / Archive Progression: Submission does not demonstrate new additions");
+  }
+  if (applied.shipped_name_valid === false) failedList.push("- Project Name: Missing or insufficient project title");
+  if (applied.shipped_code_valid === false) failedList.push("- Source Code Repository: Missing or invalid GitHub repository");
+  if (applied.shipped_desc_valid === false) failedList.push("- Project Description: Missing or insufficient description");
+  if (applied.shipped_screenshot_valid === false) failedList.push("- Deliverable Screenshot: Missing deliverable screenshot");
+  if (applied.shipped_readme_status === "fail" || applied.shipped_readme_valid === false) {
+    failedList.push("- Repository README: Missing or broken repository documentation");
+  } else if (applied.shipped_readme_status === "low_quality") {
+    failedList.push("- Repository README: Low quality or sparse documentation");
+  } else if (applied.shipped_readme_status === "ai_generated") {
+    failedList.push("- Repository README: AI-generated boilerplate");
+  }
+  if (applied.shipped_playable_status === "disallowed_host" || applied.shipped_host_compliant === false) {
+    failedList.push("- Playable Demo: Disallowed Ephemeral Host (Streamlit / Replit / Drive)");
+  } else if (applied.shipped_playable_status === "broken") {
+    failedList.push("- Playable Demo: Application is broken or crashing");
+  } else if (applied.shipped_playable_status === "fail" || applied.shipped_playable_valid === false) {
+    failedList.push("- Playable Demo: Missing or inaccessible deliverable");
+  } else if (applied.shipped_playable_status === "needs_video") {
+    failedList.push("- Playable Demo: Video proof required");
+  }
+  if (applied.telemetry_heartbeats_status === "missing" || applied.telemetry_heartbeats_verified === false) {
+    failedList.push("- Hackatime Telemetry: Missing telemetry heartbeats");
+  } else if (applied.telemetry_heartbeats_status === "suspicious" || applied.hackatime_sanity === false) {
+    failedList.push("- Hackatime Telemetry: Suspicious coding heartbeats");
+  }
+  if (applied.flag_monolithic_dump || applied.git_progression_status === "ai_dump") {
+    failedList.push("- Git Commit Progression: AI coding");
+  } else if (applied.git_progression_status === "fail" || applied.commits_diffs === false || applied.git_progression_verified === false) {
+    failedList.push("- Git Commit Progression: Zero progress or broken git history");
+  } else if (applied.git_progression_status === "deflate") {
+    failedList.push("- Git Commit Progression: Low incremental progress");
+  }
+  if (applied.flag_deleted_origin_files) {
+    failedList.push("- Git Commit Progression: Deleted origin files");
+  }
+  if (applied.flag_tutorial_plagiarized || applied.note_plagiarism_match) {
+    failedList.push("- Plagiarism / Tutorial Clone: Submission matches existing tutorial or external codebase");
+  }
+
+  if (failedList.length > 0) {
     lines.push("");
-    lines.push("Feedback to Submitter:");
-    lines.push(verdict.publicFeedback);
+    lines.push(...failedList);
   }
 
-  lines.push("");
-  lines.push(`Reviewed by Cockpit Reviewer: ${verdict.reviewerName} at ${new Date(verdict.decidedAt).toLocaleString()}`);
+  if (verdict.hoursJustification?.trim()) {
+    lines.push("");
+    lines.push(verdict.hoursJustification.trim());
+  }
 
   return lines.join("\n");
 }
@@ -221,11 +365,12 @@ apiRouter.post("/verdicts", async (req, res) => {
       publicFeedback: String(payload.publicFeedback || "").trim(),
       internalNotes: String(payload.internalNotes || "").trim(),
       appliedChecklist: payload.appliedChecklist || {},
+      checklistNotes: payload.checklistNotes || {},
       reviewerName: payload.reviewerName || "Reviewer",
       decidedAt: new Date().toISOString(),
     };
 
-    await storage.saveVerdict(project.id, verdict);
+    const saveResult = await storage.saveVerdict(project.id, verdict);
     await logVerdictRecorded(project, verdict, verdict.reviewerName);
 
     res.json({
@@ -233,10 +378,55 @@ apiRouter.post("/verdicts", async (req, res) => {
       verdict,
       project: storage.getProject(project.id),
       stats: storage.getStats(),
+      backupInfo: saveResult.backupInfo,
     });
   } catch (err: any) {
     console.error("Error in /api/verdicts:", err);
     res.status(500).json({ error: err.message || "Failed to save verdict" });
+  }
+});
+
+// -------------------------------------------------------------
+// 4b. PERMANENT BACKUPS (Automated every 5 prereviews)
+// -------------------------------------------------------------
+apiRouter.get("/backups", async (_req, res) => {
+  try {
+    const list = await storage.getBackupsList();
+    res.json({ ok: true, backups: list });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Failed to fetch backups" });
+  }
+});
+
+apiRouter.post("/backups/create", async (_req, res) => {
+  try {
+    const prereviewCount = storage.getAllVerdictsCount();
+    const backup = await storage.createPermanentBackup(prereviewCount);
+    res.json({ ok: true, backup });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Failed to create manual backup" });
+  }
+});
+
+// Complete Pre-Approval (Admin Action: Moves project to completed_pre_approved)
+apiRouter.post("/projects/:id/complete-preapproval", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const project = await storage.completePreApproval(id);
+    if (!project) {
+      res.status(404).json({ error: "Project not found" });
+      return;
+    }
+    await logAudit(project.id, project.liveRecordId, "cockpit_admin", "Admin", "verdict_recorded", {
+      action: "marked_completed_pre_approved",
+    });
+    res.json({
+      ok: true,
+      project,
+      stats: storage.getStats(),
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Failed to mark as completed" });
   }
 });
 
@@ -309,7 +499,45 @@ apiRouter.post("/projects/:id/notes", async (req, res) => {
 });
 
 // -------------------------------------------------------------
-// 7. STATS & AUDIT LOG
+// 7. USER-LEVEL PERSISTENT NOTES (Shared across all projects by this user)
+// -------------------------------------------------------------
+const userNotesMap = new Map<string, Array<{ id: string; text: string; author: string; createdAt: string }>>();
+
+apiRouter.get("/users/:username/notes", (req, res) => {
+  const username = String(req.params.username || "").toLowerCase().trim();
+  const notes = userNotesMap.get(username) || [];
+  res.json({ username, notes });
+});
+
+apiRouter.post("/users/:username/notes", (req, res) => {
+  try {
+    const username = String(req.params.username || "").toLowerCase().trim();
+    const text = String(req.body.text || "").trim();
+    const author = String(req.body.author || "Reviewer").trim();
+
+    if (!text) {
+      res.status(400).json({ error: "Note text cannot be empty" });
+      return;
+    }
+
+    const existing = userNotesMap.get(username) || [];
+    const noteObj = {
+      id: `unote-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      text,
+      author,
+      createdAt: new Date().toISOString(),
+    };
+
+    existing.unshift(noteObj);
+    userNotesMap.set(username, existing);
+    res.json({ ok: true, note: noteObj, notes: existing });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Failed to save user note" });
+  }
+});
+
+// -------------------------------------------------------------
+// 8. STATS & AUDIT LOG
 // -------------------------------------------------------------
 apiRouter.get("/stats", (req, res) => {
   res.json(storage.getStats());
@@ -616,6 +844,70 @@ apiRouter.get("/proxy/check-frame", async (req, res) => {
     res.json(result);
   } catch {
     res.json({ canFrame: false, reason: "Header check failed" });
+  }
+});
+
+// -------------------------------------------------------------
+// 10. AI-ENGINEERED SEARCH QUERY FOR PLAGIARISM FORENSICS
+// Powered by Hack Club AI proxy with google/gemini-3.8-flash
+// -------------------------------------------------------------
+const HACKCLUB_AI_PROXY_URL = process.env.HACKCLUB_AI_PROXY_URL || "https://ai.hackclub.com/proxy/v1/chat/completions";
+const HACKCLUB_AI_API_KEY = process.env.HACKCLUB_AI_API_KEY || "";
+
+
+apiRouter.post("/ai/engineer-query", async (req, res) => {
+  try {
+    const { projectName, description, language, files, readmeSnippet } = req.body || {};
+
+    if (!projectName) {
+      return res.status(400).json({ error: "projectName is required" });
+    }
+
+    const fileList = Array.isArray(files) ? files.slice(0, 15).join(", ") : "";
+    const prompt = `You are an expert open-source tutorial and plagiarism forensics investigator for student hackathons.
+Analyze this submitted project:
+- Name: "${projectName}"
+- Description: "${description || "None provided"}"
+- Language: "${language || "Unknown"}"
+${fileList ? `- Key Files: "${fileList}"` : ""}
+${readmeSnippet ? `- README excerpt: "${String(readmeSnippet).slice(0, 500)}"` : ""}
+
+Engineer the single most effective, high-precision search query to uncover if this project is copied from an existing tutorial, YouTube walkthrough, or open-source repository clone.
+DO NOT output generic filler. Formulate the exact keywords, project title, and framework identifiers that will find the original tutorial if it exists.
+Return ONLY the exact search query text on a single line, with no quotes, formatting, or commentary.`;
+
+    const aiRes = await fetch(HACKCLUB_AI_PROXY_URL, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${HACKCLUB_AI_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "google/gemini-3.8-flash",
+        messages: [{ role: "user", content: prompt }],
+        max_tokens: 1024,
+        temperature: 0.2,
+      }),
+    });
+
+    if (!aiRes.ok) {
+      const errText = await aiRes.text();
+      console.error("Hack Club AI proxy error:", errText);
+      return res.status(502).json({ error: "AI proxy returned an error", details: errText });
+    }
+
+    const data: any = await aiRes.json();
+    const rawQuery = data.choices?.[0]?.message?.content || "";
+    // Clean up any extraneous quotes, backticks, or leading/trailing whitespace
+    const cleanQuery = rawQuery.replace(/^[`"']+|[`"']+$/g, "").trim();
+
+    res.json({
+      query: cleanQuery || `${projectName} tutorial`,
+      model: "google/gemini-3.8-flash",
+    });
+  } catch (err: any) {
+    console.error("Failed to generate AI query:", err);
+    res.status(500).json({ error: err.message || "Failed to generate AI search query" });
   }
 });
 

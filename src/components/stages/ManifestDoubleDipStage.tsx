@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   ExternalLink,
@@ -33,13 +33,15 @@ interface ManifestDoubleDipStageProps {
   onAdvance: () => void;
   onEarlyExit?: (reason: string) => void;
   onApplyDeltaHours?: (hours: number, justification: string) => void;
-  reviewChecklist?: Record<string, boolean>;
-  onToggleChecklist?: (key: string, status?: boolean) => void;
+  reviewChecklist?: Record<string, any>;
+  onToggleChecklist?: (key: string, status?: any) => void;
   onBaselineCommitDiscovered?: (info: {
     commitHash: string;
     shortHash: string;
     shipName: string;
     archiveUrl: string;
+    program?: string;
+    hours?: number;
   }) => void;
 }
 
@@ -93,6 +95,11 @@ const ExpandableDescription: React.FC<{ text: string; maxLen?: number }> = ({
   );
 };
 
+// In-memory module-level caches to avoid refetching across tab switches
+const manifestCache = new Map<string, ManifestLookupData>();
+const halceonCache = new Map<string, HalceonProfileData>();
+const archiveCommitCache = new Map<string, ArchiveCommitInfo>();
+
 export const ManifestDoubleDipStage: React.FC<ManifestDoubleDipStageProps> = ({
   project,
   allProjects = [],
@@ -104,23 +111,37 @@ export const ManifestDoubleDipStage: React.FC<ManifestDoubleDipStageProps> = ({
   onToggleChecklist,
   onBaselineCommitDiscovered,
 }) => {
-  const [_manifestData, setManifestData] = useState<ManifestLookupData | null>(null);
-  const [halceonData, setHalceonData] = useState<HalceonProfileData | null>(null);
+  const cacheKey = `${project.codeUrl}:${project.githubUsername}`;
+  const [_manifestData, setManifestData] = useState<ManifestLookupData | null>(
+    () => manifestCache.get(cacheKey) || null
+  );
+  const [halceonData, setHalceonData] = useState<HalceonProfileData | null>(
+    () => halceonCache.get(project.githubUsername) || null
+  );
   const [archiveCommitData, setArchiveCommitData] = useState<ArchiveCommitInfo | null>(null);
   const [archiveCommitLoading, setArchiveCommitLoading] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
+  const [manualBaselineSha, setManualBaselineSha] = useState('');
+  const [inputSha, setInputSha] = useState('');
+  const [isLoading, setIsLoading] = useState<boolean>(
+    () => !halceonCache.has(project.githubUsername)
+  );
   const [flagNote, setFlagNote] = useState('');
   const [isFlagging, setIsFlagging] = useState(false);
 
   useEffect(() => {
     let mounted = true;
-    setIsLoading(true);
+    const isCached = halceonCache.has(project.githubUsername) && manifestCache.has(cacheKey);
+    if (!isCached) {
+      setIsLoading(true);
+    }
 
     Promise.all([
       fetchManifestLookup(project.codeUrl, project.githubUsername),
       fetchHalceonProfile(project.githubUsername),
     ])
       .then(([manRes, halRes]) => {
+        manifestCache.set(cacheKey, manRes);
+        halceonCache.set(project.githubUsername, halRes);
         if (mounted) {
           setManifestData(manRes);
           setHalceonData(halRes);
@@ -136,7 +157,7 @@ export const ManifestDoubleDipStage: React.FC<ManifestDoubleDipStageProps> = ({
     return () => {
       mounted = false;
     };
-  }, [project.codeUrl, project.githubUsername]);
+  }, [project.codeUrl, project.githubUsername, cacheKey]);
 
   // Consolidate past submissions by this submitter from the local database
   const userPastLiveSubmissions = allProjects.filter((p) => {
@@ -169,24 +190,81 @@ export const ManifestDoubleDipStage: React.FC<ManifestDoubleDipStageProps> = ({
     return repoClean && halceonRepoClean && (halceonRepoClean.includes(repoClean) || repoClean.includes(halceonRepoClean));
   });
 
-  // Find archive link for matching ship if any
-  const priorArchiveLink = matchingHalceonShip?.parsedLinks?.find((l) => l.isArchive) ||
-    (matchingHalceonShip?.links || []).find((l) => l.includes('archive.hackclub.com') || l.includes('archive.org'));
+  // Distinctly extract each link type for the matching ship
+  const priorRepoArchive =
+    matchingHalceonShip?.parsedLinks?.find(
+      (l) => l.type === 'archive_repo' || l.label.toLowerCase().includes('repo*')
+    ) ||
+    matchingHalceonShip?.parsedLinks?.find(
+      (l) => l.isArchive && !l.label.toLowerCase().includes('demo')
+    );
 
-  // Programmatically fetch archive commit hash
+  const priorDemoArchive =
+    matchingHalceonShip?.parsedLinks?.find(
+      (l) => l.type === 'archive_demo' || l.label.toLowerCase().includes('demo*')
+    );
+
+  const priorRepoLink =
+    matchingHalceonShip?.parsedLinks?.find(
+      (l) => l.type === 'repo' || (!l.isArchive && l.url.includes('github.com'))
+    );
+
+  const priorDemoLink =
+    matchingHalceonShip?.parsedLinks?.find(
+      (l) =>
+        l.type === 'demo' ||
+        (!l.isArchive && !l.url.includes('github.com') && !l.label.toLowerCase().includes('img'))
+    );
+
+  const usedPriorUrls = new Set(
+    [
+      priorRepoLink?.url,
+      priorDemoLink?.url,
+      priorRepoArchive?.url,
+      priorDemoArchive?.url,
+    ].filter(Boolean) as string[]
+  );
+
+  const otherPriorLinks = (matchingHalceonShip?.parsedLinks || []).filter(
+    (l) => !usedPriorUrls.has(l.url)
+  );
+
+  // The git repo archive specifically used for git ls-remote commit inspection
+  const priorRepoArchiveUrl =
+    priorRepoArchive?.url ||
+    (project.archiveUrl && !project.archiveUrl.includes('demo') ? project.archiveUrl : undefined);
+
+  // Programmatically fetch archive commit hash using the REPO archive
   useEffect(() => {
-    if (!priorArchiveLink) {
+    if (!priorRepoArchiveUrl) {
       setArchiveCommitData(null);
       return;
     }
-    const archiveUrl = typeof priorArchiveLink === 'string' ? priorArchiveLink : priorArchiveLink.url;
-    if (!archiveUrl || !archiveUrl.includes('archive.hackclub.com')) {
+    if (!priorRepoArchiveUrl.includes('archive.hackclub.com')) {
       return;
     }
+
+    const cached = archiveCommitCache.get(priorRepoArchiveUrl);
+    if (cached) {
+      setArchiveCommitData(cached);
+      if (cached.success && cached.commitHash && onBaselineCommitDiscovered && matchingHalceonShip) {
+        onBaselineCommitDiscovered({
+          commitHash: cached.commitHash,
+          shortHash: cached.shortHash || cached.commitHash.slice(0, 7),
+          shipName: matchingHalceonShip.repo,
+          archiveUrl: priorRepoArchiveUrl,
+          program: matchingHalceonShip.program,
+          hours: matchingHalceonShip.hours,
+        });
+      }
+      return;
+    }
+
     let mounted = true;
     setArchiveCommitLoading(true);
-    fetchArchiveCommit(archiveUrl)
+    fetchArchiveCommit(priorRepoArchiveUrl)
       .then((data) => {
+        archiveCommitCache.set(priorRepoArchiveUrl, data);
         if (mounted) {
           setArchiveCommitData(data);
           if (data.success && data.commitHash && onBaselineCommitDiscovered && matchingHalceonShip) {
@@ -194,12 +272,18 @@ export const ManifestDoubleDipStage: React.FC<ManifestDoubleDipStageProps> = ({
               commitHash: data.commitHash,
               shortHash: data.shortHash || data.commitHash.slice(0, 7),
               shipName: matchingHalceonShip.repo,
-              archiveUrl,
+              archiveUrl: priorRepoArchiveUrl,
+              program: matchingHalceonShip.program,
+              hours: matchingHalceonShip.hours,
             });
           }
         }
       })
-      .catch(() => {})
+      .catch((err) => {
+        if (mounted) {
+          setArchiveCommitData({ success: false, error: err.message || 'Inspection failed' });
+        }
+      })
       .finally(() => {
         if (mounted) setArchiveCommitLoading(false);
       });
@@ -207,7 +291,38 @@ export const ManifestDoubleDipStage: React.FC<ManifestDoubleDipStageProps> = ({
     return () => {
       mounted = false;
     };
-  }, [priorArchiveLink, matchingHalceonShip?.repo, onBaselineCommitDiscovered]);
+  }, [
+    priorRepoArchiveUrl,
+    matchingHalceonShip?.repo,
+    matchingHalceonShip?.program,
+    matchingHalceonShip?.hours,
+    onBaselineCommitDiscovered,
+  ]);
+
+  // GitHub Commits Comparison Logic
+  const rawCommits = gitHubData?.commits || [];
+  const latestCommit = rawCommits[0];
+
+  const effectiveBaselineHash = manualBaselineSha || archiveCommitData?.commitHash;
+  const effectiveShortHash = effectiveBaselineHash ? effectiveBaselineHash.slice(0, 7) : undefined;
+
+  const baselineIndex = useMemo(() => {
+    if (!effectiveBaselineHash) return -1;
+    return rawCommits.findIndex(
+      (c) =>
+        c.sha.toLowerCase().startsWith(effectiveBaselineHash.toLowerCase().slice(0, 7)) ||
+        effectiveBaselineHash.toLowerCase().startsWith(c.sha.toLowerCase().slice(0, 7))
+    );
+  }, [rawCommits, effectiveBaselineHash]);
+
+  const isHeadIdenticalToBaseline = baselineIndex === 0;
+  const newCommits = baselineIndex > 0 ? rawCommits.slice(0, baselineIndex) : [];
+  const newCommitsCount =
+    baselineIndex > 0
+      ? baselineIndex
+      : baselineIndex === -1 && effectiveBaselineHash && rawCommits.length > 0
+      ? rawCommits.length
+      : 0;
 
   // Check if similar project name exists in past ships
   const currentProjNameClean = project.projectName.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -260,6 +375,64 @@ export const ManifestDoubleDipStage: React.FC<ManifestDoubleDipStageProps> = ({
     });
   };
 
+  const renderActionControls = (position: 'top' | 'bottom') => (
+    <div
+      className={`flex items-center justify-between w-full ${
+        position === 'bottom' ? 'pt-4 border-t border-border-subtle shrink-0' : 'shrink-0'
+      }`}
+    >
+      {isFlagging ? (
+        <div className="flex items-center gap-2 flex-1 max-w-lg mr-4">
+          <input
+            type="text"
+            value={flagNote}
+            onChange={(e) => setFlagNote(e.target.value)}
+            placeholder="Reason for double-dip concern..."
+            className="text-xs px-3.5 py-2 rounded-xl border border-[#3f3f46] bg-[#18181b] text-white placeholder-[#71717a] flex-1 focus:outline-none focus:border-rose-500 transition-colors shadow-inner"
+            autoFocus
+          />
+          <button
+            type="button"
+            onClick={() => {
+              if (onEarlyExit && flagNote.trim()) {
+                onEarlyExit(`Double-Dip Concern: ${flagNote.trim()}`);
+              }
+              setIsFlagging(false);
+            }}
+            className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold transition-colors shrink-0 shadow-md cursor-pointer flex items-center gap-1.5"
+          >
+            <AlertTriangle className="w-3.5 h-3.5" />
+            <span>Confirm Flag</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setIsFlagging(false)}
+            className="px-3 py-2 text-xs text-[#a1a1aa] hover:text-white transition-colors cursor-pointer"
+          >
+            Cancel
+          </button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setIsFlagging(true)}
+          className="px-3.5 py-2 rounded-xl bg-[#18181b] border border-amber-500/50 text-amber-300 hover:bg-rose-950/60 hover:text-rose-200 hover:border-rose-500/60 text-xs font-bold flex items-center gap-2 shadow-sm transition-colors cursor-pointer"
+        >
+          <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+          <span>Flag Potential Double-Dip</span>
+        </button>
+      )}
+
+      <button
+        type="button"
+        onClick={onAdvance}
+        className="px-5 py-2.5 rounded-xl bg-[#ff6b35] text-white font-bold hover:bg-[#ea580c] transition-all shadow-md flex items-center gap-1.5 cursor-pointer text-xs shrink-0 ml-auto"
+      >
+        <span>Next: README & Deliverables →</span>
+      </button>
+    </div>
+  );
+
   return (
     <div className="h-full overflow-y-auto p-8 space-y-6 max-w-5xl mx-auto flex flex-col">
       {/* Stage Header */}
@@ -267,7 +440,7 @@ export const ManifestDoubleDipStage: React.FC<ManifestDoubleDipStageProps> = ({
         <div>
           <div className="flex items-center gap-2">
             <span className="text-xs font-mono font-bold uppercase tracking-wider text-brand-orange bg-brand-orange/10 px-2 py-0.5 rounded border border-brand-orange/20">
-              Stage 1 of 6
+              Stage 1 of 7
             </span>
             <span className="text-xs text-content-tertiary">Cross-Program Audit</span>
           </div>
@@ -293,6 +466,9 @@ export const ManifestDoubleDipStage: React.FC<ManifestDoubleDipStageProps> = ({
         </a>
       </div>
 
+      {/* Top Action Controls Bar */}
+      {renderActionControls('top')}
+
       {isLoading ? (
         <div className="py-24 flex flex-col items-center justify-center gap-3 text-content-tertiary text-xs">
           <RefreshCw className="w-5 h-5 animate-spin text-brand-orange" />
@@ -302,118 +478,363 @@ export const ManifestDoubleDipStage: React.FC<ManifestDoubleDipStageProps> = ({
         <>
           {/* Critical Double-Dip Alert & Archive Comparison Panel */}
           {isDoubleDipDetected && matchingHalceonShip ? (
-            <div className="p-6 rounded-2xl bg-[#121214] border border-[#27272a] text-white space-y-4 shadow-xl">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#27272a] pb-4">
-                <div className="flex items-center gap-3">
-                  <span className="px-2.5 py-1 rounded-md text-xs font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
-                    CRITICAL DOUBLE-DIP DETECTED
-                  </span>
-                  <span className="text-xs text-[#a1a1aa]">
-                    Approved in <strong>{matchingHalceonShip.program}</strong> ({matchingHalceonShip.hours}h on {matchingHalceonShip.approvedAt})
+            <div className="p-6 rounded-2xl bg-[#121214] border border-amber-500/50 text-white space-y-5 shadow-2xl">
+              {/* Header: Identified Colliding Prior Ship */}
+              <div className="space-y-3 border-b border-[#27272a] pb-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-2 flex-wrap min-w-0">
+                    <span className="px-2.5 py-0.5 rounded-md text-xs font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                      CRITICAL DOUBLE-DIP DETECTED
+                    </span>
+                    <span className="px-2 py-0.5 rounded text-[11px] font-mono font-bold uppercase bg-purple-900/40 text-purple-300 border border-purple-500/30">
+                      Program: {matchingHalceonShip.program}
+                    </span>
+                    <span className="text-xs font-mono text-emerald-400 font-bold">
+                      {matchingHalceonShip.hours} hrs approved
+                    </span>
+                    {matchingHalceonShip.approvedAt && (
+                      <span className="text-xs font-mono text-[#a1a1aa]">
+                        ({matchingHalceonShip.approvedAt})
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Compact Quick Action Links matching bottom table format */}
+                  <div className="flex items-center gap-1.5 flex-wrap shrink-0">
+                    <span className="text-[10px] uppercase text-[#71717a] font-semibold mr-0.5">
+                      Links:
+                    </span>
+                    {priorRepoLink && (
+                      <a
+                        href={priorRepoLink.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="px-2 py-0.5 rounded-md text-[11px] font-mono bg-blue-950/60 text-blue-300 border border-blue-500/40 hover:bg-blue-900/60 transition-colors inline-flex items-center gap-1 cursor-pointer"
+                        title="Open previously approved GitHub repository"
+                      >
+                        <FileCode className="w-3 h-3 text-blue-400" />
+                        <span>repo</span>
+                        <ExternalLink className="w-2.5 h-2.5 opacity-60" />
+                      </a>
+                    )}
+
+                    {priorDemoLink && (
+                      <a
+                        href={priorDemoLink.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="px-2 py-0.5 rounded-md text-[11px] font-mono bg-emerald-950/60 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-900/60 transition-colors inline-flex items-center gap-1 cursor-pointer"
+                        title="Open previously approved live demo"
+                      >
+                        <Globe className="w-3 h-3 text-emerald-400" />
+                        <span>demo</span>
+                        <ExternalLink className="w-2.5 h-2.5 opacity-60" />
+                      </a>
+                    )}
+
+                    {priorRepoArchive && (
+                      <a
+                        href={priorRepoArchive.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="px-2 py-0.5 rounded-md text-[11px] font-mono bg-purple-950/60 text-purple-300 border border-purple-500/40 hover:bg-purple-900/60 transition-colors inline-flex items-center gap-1 cursor-pointer"
+                        title="Download prior git repository archive snapshot"
+                      >
+                        <Archive className="w-3 h-3 text-purple-400" />
+                        <span>repo*</span>
+                        <ExternalLink className="w-2.5 h-2.5 opacity-60" />
+                      </a>
+                    )}
+
+                    {priorDemoArchive && (
+                      <a
+                        href={priorDemoArchive.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="px-2 py-0.5 rounded-md text-[11px] font-mono bg-amber-950/60 text-amber-300 border border-amber-500/40 hover:bg-amber-900/60 transition-colors inline-flex items-center gap-1 cursor-pointer"
+                        title="Download prior demo archive snapshot"
+                      >
+                        <Archive className="w-3 h-3 text-amber-400" />
+                        <span>demo*</span>
+                        <ExternalLink className="w-2.5 h-2.5 opacity-60" />
+                      </a>
+                    )}
+
+                    {otherPriorLinks.map((ol, oIdx) => (
+                      <a
+                        key={oIdx}
+                        href={ol.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="px-2 py-0.5 rounded-md text-[11px] font-mono bg-[#27272a] text-[#d4d4d8] hover:text-white border border-[#3f3f46] transition-colors inline-flex items-center gap-1 cursor-pointer"
+                      >
+                        <span>{ol.label}</span>
+                        <ExternalLink className="w-2.5 h-2.5 opacity-60" />
+                      </a>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Prior Approved Repo Name - Single-line, readable font size */}
+                <div className="flex items-center gap-2 text-xs pt-1 truncate">
+                  <span className="text-[#a1a1aa] shrink-0 font-medium">Prior Approved Repo:</span>
+                  <span className="text-white font-mono font-bold truncate">
+                    {matchingHalceonShip.repo}
                   </span>
                 </div>
 
-                {priorArchiveLink && (
-                  <a
-                    href={typeof priorArchiveLink === 'string' ? priorArchiveLink : priorArchiveLink.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="px-3 py-1.5 rounded-lg bg-[#18181b] hover:bg-[#27272a] border border-[#27272a] text-xs font-mono font-semibold text-purple-300 inline-flex items-center gap-1.5 transition-colors"
-                  >
-                    <Archive className="w-3.5 h-3.5" />
-                    <span>Download Prior Archive Snapshot</span>
-                    <ExternalLink className="w-3 h-3" />
-                  </a>
+                {/* Description: Full-width coverage, no cramping */}
+                {matchingHalceonShip.description && (
+                  <div className="text-xs text-[#d4d4d8] pt-1 w-full leading-relaxed">
+                    <ExpandableDescription text={matchingHalceonShip.description} maxLen={280} />
+                  </div>
                 )}
               </div>
 
-              {/* What Happens Policy Explanation */}
-              <div className="space-y-1.5 text-xs text-[#d4d4d8] leading-relaxed">
-                <h4 className="font-bold text-white text-sm">
-                  What happens when a project is double-dipped?
+              {/* Policy Explanation */}
+              <div className="space-y-1.5 text-xs text-[#d4d4d8] leading-relaxed bg-[#18181b] p-3.5 rounded-xl border border-[#27272a]">
+                <h4 className="font-bold text-white text-xs uppercase tracking-wider">
+                  Double-Dip Evaluation Rules
                 </h4>
                 <p>
-                  Per Hack Club guidelines, submitters <strong>cannot be credited twice for the same work</strong>. Continuing a project across programs is permitted, but <strong>only for new commits pushed after the previously approved ship</strong>. Do NOT simply subtract past hours ({matchingHalceonShip.hours}h) from claimed hours ({project.submittedHours}h). Instead, evaluate the delta diff.
+                  Submitters <strong>cannot be credited twice for the same work</strong>. Continuing a project across programs (e.g. {matchingHalceonShip.program} → Horizons) is permitted, but <strong>strictly for new commits pushed after the previously approved ship</strong>. Do NOT simply subtract past hours ({matchingHalceonShip.hours}h) from claimed hours ({project.submittedHours}h). Evaluate the exact commit diff from the baseline hash to HEAD.
                 </p>
               </div>
 
-              {/* Programmatically Discovered Baseline Commit */}
+              {/* Commit Comparison & Baseline Discovery */}
               {archiveCommitLoading ? (
-                <div className="p-3.5 rounded-xl bg-[#18181b] border border-[#27272a] text-[#a1a1aa] flex items-center gap-2 text-xs">
-                  <RefreshCw className="w-3.5 h-3.5 animate-spin text-[#ff6b35]" />
-                  <span>Looking up archive baseline commit hash via git ls-remote...</span>
-                </div>
-              ) : archiveCommitData?.success && archiveCommitData.commitHash ? (
-                <div className="p-4 rounded-xl bg-[#18181b] border border-purple-500/40 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <GitCommit className="w-4 h-4 text-purple-400" />
-                      <span className="text-xs font-bold text-white">Baseline Approved Commit:</span>
-                      <code className="text-emerald-400 bg-black/60 px-2 py-0.5 rounded font-mono font-bold text-xs">
-                        {archiveCommitData.shortHash}
-                      </code>
-                    </div>
-                    <span className="text-[10px] font-mono text-[#a1a1aa]">
-                      Archive Ref: {archiveCommitData.archiveId}
+                <div className="p-4 rounded-xl bg-[#18181b] border border-[#27272a] text-[#a1a1aa] flex items-center gap-3 text-xs">
+                  <RefreshCw className="w-4 h-4 animate-spin text-brand-orange shrink-0" />
+                  <div>
+                    <span className="font-bold text-white block">
+                      Inspecting prior repo archive snapshot ({priorRepoArchiveUrl || 'archive repository'})...
+                    </span>
+                    <span className="text-[11px] text-[#71717a]">
+                      Running git ls-remote to discover the exact baseline approved commit hash.
                     </span>
                   </div>
+                </div>
+              ) : effectiveBaselineHash ? (
+                <div className="p-5 rounded-xl bg-[#18181b] border border-purple-500/40 space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#27272a] pb-3">
+                    <div className="flex items-center gap-2">
+                      <GitCommit className="w-4 h-4 text-purple-400" />
+                      <span className="text-xs font-bold text-white uppercase tracking-wider">
+                        Baseline vs Current HEAD Comparison
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] font-mono text-[#a1a1aa]">Baseline Approved Hash:</span>
+                      <code className="text-emerald-400 bg-black/60 px-2 py-0.5 rounded font-mono font-bold text-xs border border-emerald-500/30">
+                        {effectiveShortHash}
+                      </code>
+                    </div>
+                  </div>
 
-                  <div className="flex items-center gap-2 flex-wrap">
+                  {/* Side-by-side comparison */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {/* Left: Prior Ship Baseline Commit */}
+                    <div className="p-4 rounded-xl bg-[#121214] border border-[#27272a] space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-purple-300 flex items-center gap-1.5">
+                          <Archive className="w-3.5 h-3.5 text-purple-400" />
+                          <span>Previously Approved Commit (Baseline)</span>
+                        </span>
+                        <span className="text-[10px] font-mono text-[#a1a1aa] bg-[#27272a] px-1.5 py-0.5 rounded">
+                          {matchingHalceonShip.program}
+                        </span>
+                      </div>
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <code className="text-xs font-mono font-bold text-white bg-black/50 px-2 py-0.5 rounded">
+                            {effectiveShortHash}
+                          </code>
+                          {archiveCommitData?.archiveId && (
+                            <span className="text-[10px] font-mono text-[#a1a1aa]">
+                              Ref: {archiveCommitData.archiveId}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-[#a1a1aa] leading-relaxed">
+                          Approved on {matchingHalceonShip.approvedAt} for {matchingHalceonShip.hours} hours.
+                        </p>
+                      </div>
+                      <div className="pt-1">
+                        <a
+                          href={`${project.codeUrl}/commit/${effectiveBaselineHash}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-xs font-mono text-purple-400 hover:underline inline-flex items-center gap-1 cursor-pointer"
+                        >
+                          <span>View Baseline Commit on GitHub</span>
+                          <ExternalLink className="w-3 h-3" />
+                        </a>
+                      </div>
+                    </div>
+
+                    {/* Right: Current Submitted Repository HEAD */}
+                    <div className="p-4 rounded-xl bg-[#121214] border border-[#27272a] space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-blue-300 flex items-center gap-1.5">
+                          <GitCommit className="w-3.5 h-3.5 text-blue-400" />
+                          <span>Current Submitted HEAD</span>
+                        </span>
+                        <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/60 border border-emerald-500/30 px-1.5 py-0.5 rounded">
+                          Latest Push
+                        </span>
+                      </div>
+                      {latestCommit ? (
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <code className="text-xs font-mono font-bold text-white bg-black/50 px-2 py-0.5 rounded">
+                              {latestCommit.shortSha}
+                            </code>
+                            <span className="text-[11px] text-[#d4d4d8] truncate max-w-[200px]" title={latestCommit.message}>
+                              {latestCommit.message}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-[#a1a1aa]">
+                            By @{latestCommit.author} {latestCommit.date ? `on ${new Date(latestCommit.date).toLocaleDateString()}` : ''}
+                          </p>
+                        </div>
+                      ) : (
+                        <p className="text-xs text-[#71717a] italic">Loading repository HEAD commit...</p>
+                      )}
+                      <div className="pt-1">
+                        {latestCommit && (
+                          <a
+                            href={`${project.codeUrl}/commit/${latestCommit.sha}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-xs font-mono text-blue-400 hover:underline inline-flex items-center gap-1 cursor-pointer"
+                          >
+                            <span>View Latest Commit on GitHub</span>
+                            <ExternalLink className="w-3 h-3" />
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Primary CTA: Compare New Work on GitHub */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-xl bg-[#121214] border border-[#27272a]">
+                    <div className="text-xs text-[#d4d4d8]">
+                      <span className="font-semibold text-white">Compare incremental additions:</span>
+                      <span className="text-[#a1a1aa] block text-[11px]">
+                        GitHub comparison diff isolating only commits pushed after baseline {effectiveShortHash}
+                      </span>
+                    </div>
+
                     <a
-                      href={`${project.codeUrl}/commit/${archiveCommitData.commitHash}`}
+                      href={`${project.codeUrl}/compare/${effectiveBaselineHash}...HEAD`}
                       target="_blank"
                       rel="noreferrer"
-                      className="px-3 py-1.5 rounded-lg bg-[#27272a] hover:bg-[#3f3f46] text-white text-xs font-semibold inline-flex items-center gap-1.5 transition-colors"
+                      className="px-4 py-2 rounded-lg bg-brand-orange hover:bg-orange-600 text-white text-xs font-bold inline-flex items-center gap-1.5 transition-colors shadow-sm shrink-0 cursor-pointer"
                     >
-                      <span>View Baseline Commit ({archiveCommitData.shortHash})</span>
-                      <ExternalLink className="w-3 h-3" />
-                    </a>
-                    <a
-                      href={`${project.codeUrl}/compare/${archiveCommitData.commitHash}...HEAD`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="px-3 py-1.5 rounded-lg bg-[#ff6b35] hover:bg-[#ea580c] text-white text-xs font-bold inline-flex items-center gap-1.5 transition-colors shadow-sm"
-                    >
-                      <span>Inspect New Work on GitHub ({archiveCommitData.shortHash}...HEAD)</span>
-                      <ExternalLink className="w-3 h-3" />
+                      <span>Inspect Changes ({effectiveShortHash}...HEAD)</span>
+                      <ExternalLink className="w-3.5 h-3.5" />
                     </a>
                   </div>
 
-                  {/* Critical Blocker: HEAD is Identical to Baseline */}
-                  {Boolean(
-                    archiveCommitData.commitHash &&
-                      gitHubData?.commits?.[0]?.sha &&
-                      (archiveCommitData.commitHash
-                        .toLowerCase()
-                        .startsWith(gitHubData.commits[0].sha.toLowerCase().slice(0, 7)) ||
-                        gitHubData.commits[0].sha
-                          .toLowerCase()
-                          .startsWith(archiveCommitData.commitHash.toLowerCase().slice(0, 7)))
-                  ) && (
-                    <div className="p-3.5 rounded-xl bg-rose-950/60 border border-rose-500/80 text-white text-xs flex items-center justify-between gap-3 shadow-lg">
-                      <div className="flex items-center gap-2">
-                        <AlertTriangle className="w-4 h-4 text-rose-300 shrink-0" />
-                        <span className="font-semibold">
-                          🚨 Zero Progress: Repository HEAD is identical to baseline commit ({archiveCommitData.shortHash}). No new commits exist since prior ship &ldquo;{matchingHalceonShip.repo}&rdquo;!
-                        </span>
+                  {/* Zero Progress Blocker or New Progress List */}
+                  {isHeadIdenticalToBaseline ? (
+                    <div className="p-4 rounded-xl bg-[#2b080d] border-2 border-rose-600 text-white text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xl">
+                      <div className="flex items-center gap-2.5">
+                        <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0" />
+                        <div className="space-y-0.5">
+                          <span className="font-bold text-rose-200 block text-sm">
+                            Zero Progress Double-Dip Detected!
+                          </span>
+                          <p className="text-rose-200/90 leading-relaxed">
+                            Repository HEAD ({latestCommit?.shortSha}) is IDENTICAL to the baseline commit ({effectiveShortHash}) previously approved in &ldquo;{matchingHalceonShip.program}&rdquo;. Zero new commits were made since prior ship!
+                          </p>
+                        </div>
                       </div>
+
                       {onEarlyExit && (
                         <button
                           type="button"
                           onClick={() =>
                             onEarlyExit(
-                              `Zero Progress Double-Dip: Repository HEAD is identical to previously approved archive commit (${archiveCommitData.shortHash}) from "${matchingHalceonShip.repo}"`
+                              `Zero Progress Double-Dip: Repository HEAD is identical to previously approved archive commit (${effectiveShortHash}) from "${matchingHalceonShip.repo}" in ${matchingHalceonShip.program}`
                             )
                           }
-                          className="px-3 py-1 rounded bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shrink-0 shadow-sm transition-colors cursor-pointer"
+                          className="px-4 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold shrink-0 shadow-md transition-colors cursor-pointer"
                         >
                           Reject for Zero Progress
                         </button>
                       )}
                     </div>
-                  )}
+                  ) : newCommitsCount > 0 ? (
+                    <div className="p-4 rounded-xl bg-emerald-950/40 border border-emerald-500/50 space-y-2">
+                      <div className="flex items-center gap-2 text-xs font-bold text-emerald-300">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                        <span>New Progress Verified ({newCommitsCount} new commit{newCommitsCount > 1 ? 's' : ''} pushed after baseline {effectiveShortHash})</span>
+                      </div>
+                      <div className="space-y-1.5 pt-1 max-h-40 overflow-y-auto">
+                        {newCommits.map((c) => (
+                          <div key={c.sha} className="flex items-center justify-between p-2 rounded bg-black/40 text-xs font-mono">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="text-emerald-400 font-bold">{c.shortSha}</span>
+                              <span className="text-[#d4d4d8] truncate text-[11px]">{c.message}</span>
+                            </div>
+                            <span className="text-[10px] text-[#71717a] shrink-0 ml-2">
+                              {c.date ? new Date(c.date).toLocaleDateString() : ''}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
-              ) : null}
+              ) : (
+                /* Archive Commit Inspection Warning & Manual Input Fallback */
+                <div className="p-4 rounded-xl bg-amber-950/40 border border-amber-500/50 text-amber-200 text-xs space-y-3">
+                  <div className="flex items-start gap-2.5">
+                    <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                    <div className="space-y-1 flex-1">
+                      <span className="font-bold text-amber-300 block">
+                        Could not automatically resolve baseline git commit from archive
+                      </span>
+                      <p className="text-amber-200/90 leading-relaxed text-[11px]">
+                        {archiveCommitData?.error || 'No git references found in archive repository.'} You can inspect the prior repo snapshot directly using the buttons above, or paste the baseline commit SHA below to unlock the side-by-side comparison.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 pt-1">
+                    <input
+                      type="text"
+                      value={inputSha}
+                      onChange={(e) => setInputSha(e.target.value)}
+                      placeholder="Paste baseline commit SHA (e.g. dd8e2cd)..."
+                      className="px-3 py-1.5 rounded-lg bg-black/60 border border-[#3f3f46] text-white text-xs font-mono flex-1 focus:outline-none focus:border-brand-orange"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (inputSha.trim()) {
+                          setManualBaselineSha(inputSha.trim());
+                          if (onBaselineCommitDiscovered && matchingHalceonShip) {
+                            onBaselineCommitDiscovered({
+                              commitHash: inputSha.trim(),
+                              shortHash: inputSha.trim().slice(0, 7),
+                              shipName: matchingHalceonShip.repo,
+                              archiveUrl: priorRepoArchiveUrl || '',
+                              program: matchingHalceonShip.program,
+                              hours: matchingHalceonShip.hours,
+                            });
+                          }
+                        }
+                      }}
+                      disabled={!inputSha.trim()}
+                      className="px-3 py-1.5 rounded-lg bg-brand-orange hover:bg-orange-600 disabled:opacity-40 text-white font-bold text-xs transition-colors cursor-pointer"
+                    >
+                      Apply Baseline
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           ) : similarHalceonShip || similarLiveSubmission ? (
             <div className="p-5 rounded-2xl bg-[#121214] border border-amber-500/40 text-white flex items-start gap-3 text-xs shadow-xl">
@@ -443,6 +864,34 @@ export const ManifestDoubleDipStage: React.FC<ManifestDoubleDipStageProps> = ({
               </span>
             </div>
           )}
+
+          {/* Card 2: Stage 1 Verification Checklist (Directly after Double Dip evaluation) */}
+          <div className="p-5 rounded-2xl bg-[#121214] border border-[#27272a] text-white space-y-3.5 shadow-lg shrink-0">
+            <div className="flex items-center justify-between border-b border-[#27272a] pb-3">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-white">
+                Stage 1 Verification: Submitter Track Record & History
+              </h3>
+              <span className="text-xs text-[#a1a1aa]">Select Pass or Fail for each criterion</span>
+            </div>
+
+            <div className="space-y-2.5">
+              <PassFailControl
+                label="Halceon Cross-YSWS Ships & Archives Inspected"
+                description={`Verified complete track record (${halceonTotalShips} prior ships in Stardance, Arcade, High Seas, Blot) and checked archive presence.`}
+                status={reviewChecklist['stage1_halceon_reviewed']}
+                onPass={() => handlePass('stage1_halceon_reviewed')}
+                onFail={() => handleFail('stage1_halceon_reviewed')}
+              />
+
+              <PassFailControl
+                label="Live Submissions History Audited"
+                description="Verified past submissions in Hack Club Live for this user."
+                status={reviewChecklist['stage1_live_reviewed']}
+                onPass={() => handlePass('stage1_live_reviewed')}
+                onFail={() => handleFail('stage1_live_reviewed')}
+              />
+            </div>
+          </div>
 
           {/* Section 1: Halceon Unified Ships (Card-based, displays 1 to 4+ links with full archive verification) */}
           <div className="p-5 rounded-2xl bg-[#121214] border border-[#27272a] text-white space-y-4 shadow-lg">
@@ -645,92 +1094,8 @@ export const ManifestDoubleDipStage: React.FC<ManifestDoubleDipStageProps> = ({
             )}
           </div>
 
-          {/* Interactive Reviewer Pass/Fail Checklist */}
-          <div className="p-5 rounded-2xl bg-[#121214] border border-[#27272a] text-white space-y-3.5 shadow-lg">
-            <div className="flex items-center justify-between border-b border-[#27272a] pb-3">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-white">
-                Stage 1 Verification: Double-Dip & History Checks
-              </h3>
-              <span className="text-xs text-[#a1a1aa]">Select Pass or Fail for each criterion</span>
-            </div>
-
-            <div className="space-y-2.5">
-              <PassFailControl
-                label="Halceon Cross-YSWS Ships & Archives Inspected"
-                description={`Verified complete track record (${halceonTotalShips} prior ships in Stardance, Arcade, High Seas, Blot) and checked archive presence.`}
-                status={reviewChecklist['stage1_halceon_reviewed']}
-                onPass={() => handlePass('stage1_halceon_reviewed')}
-                onFail={() => handleFail('stage1_halceon_reviewed')}
-              />
-
-              <PassFailControl
-                label="Live Submissions History Audited"
-                description="Verified past submissions in Hack Club Live for this user."
-                status={reviewChecklist['stage1_live_reviewed']}
-                onPass={() => handlePass('stage1_live_reviewed')}
-                onFail={() => handleFail('stage1_live_reviewed')}
-              />
-
-              <PassFailControl
-                label="Archive vs Code Progression Verified (No Unchanged Resubmissions)"
-                description="Verified genuine new progress and features were created beyond previous archived snapshot (no naive hours subtraction)."
-                status={reviewChecklist['stage1_double_dip_checked']}
-                onPass={() => handlePass('stage1_double_dip_checked')}
-                onFail={() => handleFail('stage1_double_dip_checked')}
-              />
-            </div>
-          </div>
-
-          {/* Reviewer Action Bar */}
-          <div className="pt-4 flex items-center justify-between border-t border-border-subtle shrink-0">
-            {isFlagging ? (
-              <div className="flex items-center gap-2 flex-1 max-w-md mr-4">
-                <input
-                  type="text"
-                  value={flagNote}
-                  onChange={(e) => setFlagNote(e.target.value)}
-                  placeholder="Reason for double-dip concern..."
-                  className="text-xs px-3 py-1.5 rounded-lg border border-border bg-canvas-card text-content-primary flex-1 focus:outline-none focus:border-brand-orange"
-                />
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (onEarlyExit && flagNote.trim()) {
-                      onEarlyExit(`Double-Dip Concern: ${flagNote.trim()}`);
-                    }
-                    setIsFlagging(false);
-                  }}
-                  className="px-3 py-1.5 rounded-lg bg-semantic-danger text-white text-xs font-semibold hover:bg-red-700 transition-colors shrink-0 cursor-pointer"
-                >
-                  Confirm Flag
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setIsFlagging(false)}
-                  className="px-2.5 py-1.5 text-xs text-content-tertiary hover:text-content-primary cursor-pointer"
-                >
-                  Cancel
-                </button>
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setIsFlagging(true)}
-                className="px-3.5 py-2 rounded-lg bg-canvas-card border border-border-subtle text-xs font-semibold text-content-secondary hover:text-semantic-danger hover:border-semantic-dangerBorder transition-colors flex items-center gap-1.5 shadow-sm cursor-pointer"
-              >
-                <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
-                <span>Flag Potential Double-Dip</span>
-              </button>
-            )}
-
-            <button
-              type="button"
-              onClick={onAdvance}
-              className="px-5 py-2.5 rounded-xl bg-[#ff6b35] text-white font-bold hover:bg-[#ea580c] transition-all shadow-md flex items-center gap-1.5 cursor-pointer text-xs"
-            >
-              <span>Next: Readme & Deliverables →</span>
-            </button>
-          </div>
+          {/* Bottom Action Bar */}
+          {renderActionControls('bottom')}
         </>
       )}
     </div>

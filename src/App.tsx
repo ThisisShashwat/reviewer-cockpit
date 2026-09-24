@@ -205,9 +205,11 @@ export const App: React.FC = () => {
       setIsSoftwareQueueLocked(true);
     }
     setActiveProjectId(project.id);
-    setActiveStep(0);
+    // If pending: start at Stage 0 (History). If pre-approved or view-only: start directly at Stage 6 (Verdict Desk)!
+    const initialStep: ReviewStep = project.cockpitStatus === 'pending' ? 0 : 6;
+    setActiveStep(initialStep);
     setCurrentPage('review');
-    updateUrl('review', project.id, 0);
+    updateUrl('review', project.id, initialStep);
   };
 
   const handleStartSoftwareQueue = () => {
@@ -255,8 +257,9 @@ export const App: React.FC = () => {
     if (currentProjectIndex < activeReviewList.length - 1) {
       const next = activeReviewList[currentProjectIndex + 1];
       setActiveProjectId(next.id);
-      setActiveStep(0);
-      updateUrl('review', next.id, 0);
+      const nextStep: ReviewStep = next.cockpitStatus === 'pending' ? 0 : 6;
+      setActiveStep(nextStep);
+      updateUrl('review', next.id, nextStep);
     }
   };
 
@@ -264,8 +267,9 @@ export const App: React.FC = () => {
     if (currentProjectIndex > 0) {
       const prev = activeReviewList[currentProjectIndex - 1];
       setActiveProjectId(prev.id);
-      setActiveStep(0);
-      updateUrl('review', prev.id, 0);
+      const prevStep: ReviewStep = prev.cockpitStatus === 'pending' ? 0 : 6;
+      setActiveStep(prevStep);
+      updateUrl('review', prev.id, prevStep);
     }
   };
 
@@ -278,6 +282,56 @@ export const App: React.FC = () => {
       prev.map((p) => (p.id === updatedProject.id ? updatedProject : p))
     );
     loadProjects();
+
+    // Auto-advance specifically from pending queue only
+    const remainingPending = projects.filter(
+      (p) =>
+        p.cockpitStatus === 'pending' &&
+        p.id !== updatedProject.id &&
+        (isSoftwareQueueLocked ? p.projectType === 'software' : true)
+    );
+
+    if (remainingPending.length > 0) {
+      const next = remainingPending[0];
+      setActiveProjectId(next.id);
+      setActiveStep(0);
+      updateUrl('review', next.id, 0);
+      toast.success(
+        `Recorded into Pre-Approved! Advanced to next pending project: ${next.projectName}`
+      );
+    } else {
+      toast.success('Verdict recorded! All pending projects in this queue have been completed.');
+      handleBackToQueue();
+    }
+  };
+
+  const handleCompletePreApproval = (completedProject: CockpitProject) => {
+    setActiveProject(completedProject);
+    setProjects((prev) =>
+      prev.map((p) => (p.id === completedProject.id ? completedProject : p))
+    );
+    loadProjects();
+
+    // Auto-advance to next pre-approved project
+    const remainingPreApproved = projects.filter(
+      (p) =>
+        p.cockpitStatus === 'pre_approved' &&
+        p.id !== completedProject.id &&
+        (isSoftwareQueueLocked ? p.projectType === 'software' : true)
+    );
+
+    if (remainingPreApproved.length > 0) {
+      const next = remainingPreApproved[0];
+      setActiveProjectId(next.id);
+      setActiveStep(6);
+      updateUrl('review', next.id, 6);
+      toast.success(
+        `Marked as Completed! Advanced to next pre-approved project: ${next.projectName}`
+      );
+    } else {
+      toast.success('All pre-approved projects have been processed!');
+      handleBackToQueue();
+    }
   };
 
   return (
@@ -326,6 +380,7 @@ export const App: React.FC = () => {
               auditHistory={auditHistory}
               onNoteAdded={(newEntry) => setAuditHistory((prev) => [newEntry, ...prev])}
               onVerdictSubmitted={handleVerdictSubmitted}
+              onCompletePreApproval={handleCompletePreApproval}
               initialStep={activeStep}
               onStepChange={handleStepChange}
             />

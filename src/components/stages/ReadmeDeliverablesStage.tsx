@@ -11,11 +11,14 @@ import {
   Check,
   AlertTriangle,
   FolderGit2,
+  Bot,
+  X,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { CockpitProject, GitHubRepoData } from '../../lib/types';
 import { parseGitHubRepo } from '../../lib/api';
 import { PassFailControl } from '../common/PassFailControl';
+import { MultiOptionSelector, SelectorOption } from '../common/MultiOptionSelector';
 import { decodeHtmlEntities } from '../../lib/utils';
 
 interface ReadmeDeliverablesStageProps {
@@ -23,8 +26,8 @@ interface ReadmeDeliverablesStageProps {
   gitHubData?: Partial<GitHubRepoData>;
   onAdvance: () => void;
   onEarlyExit?: (reason: string) => void;
-  reviewChecklist?: Record<string, boolean>;
-  onToggleChecklist?: (key: string, status?: boolean) => void;
+  reviewChecklist?: Record<string, any>;
+  onToggleChecklist?: (key: string, status?: any) => void;
 }
 
 export const ReadmeDeliverablesStage: React.FC<ReadmeDeliverablesStageProps> = ({
@@ -64,36 +67,102 @@ export const ReadmeDeliverablesStage: React.FC<ReadmeDeliverablesStageProps> = (
     setTimeout(() => setCopiedUrl(null), 2000);
   };
 
-  // Status checks for Stage 2
-  const hasName = Boolean(cleanProjectName.length >= 2);
+  type ReadmeStatus = 'pass' | 'ai_generated' | 'low_quality' | 'fail';
+
+  const README_OPTIONS: SelectorOption<ReadmeStatus>[] = [
+    { id: 'pass', label: 'Pass (Detailed)', color: 'emerald', icon: Check, description: 'Comprehensive human-authored documentation' },
+    { id: 'ai_generated', label: 'AI-Generated', color: 'purple', icon: Bot, description: 'Standard AI boilerplate / prompt template generated README' },
+    { id: 'low_quality', label: 'Low Quality / Sparse', color: 'amber', icon: AlertTriangle, description: 'Minimal, missing key steps, or low-effort documentation' },
+    { id: 'fail', label: 'Fail (Missing/Broken)', color: 'rose', icon: X, description: 'Missing setup/running documentation or broken links' },
+  ];
+
+  // Status checks for Stage 2 (No default auto-selection)
   const isNameExplicitPassed = reviewChecklist['shipped_name_valid'] === true;
   const isNameExplicitFailed = reviewChecklist['shipped_name_valid'] === false;
-  const isNamePassed =
-    isNameExplicitPassed || (isNameExplicitFailed ? false : hasName);
 
-  const hasCode = Boolean(codeUrl && codeUrl.includes('github.com'));
   const isCodeExplicitPassed = reviewChecklist['shipped_code_valid'] === true;
   const isCodeExplicitFailed = reviewChecklist['shipped_code_valid'] === false;
-  const isCodePassed =
-    isCodeExplicitPassed || (isCodeExplicitFailed ? false : hasCode);
 
-  const hasDesc = Boolean(cleanDescription.length >= 10);
   const isDescExplicitPassed = reviewChecklist['shipped_desc_valid'] === true;
   const isDescExplicitFailed = reviewChecklist['shipped_desc_valid'] === false;
-  const isDescPassed =
-    isDescExplicitPassed || (isDescExplicitFailed ? false : hasDesc);
 
-  const hasScreenshot = Boolean(screenshotUrl && screenshotUrl.length > 5);
   const isScreenshotExplicitPassed = reviewChecklist['shipped_screenshot_valid'] === true;
   const isScreenshotExplicitFailed = reviewChecklist['shipped_screenshot_valid'] === false;
-  const isScreenshotPassed =
-    isScreenshotExplicitPassed || (isScreenshotExplicitFailed ? false : hasScreenshot);
 
-  const hasReadme = Boolean(readmeContent && readmeContent.length > 30);
-  const isReadmeExplicitPassed = reviewChecklist['shipped_readme_valid'] === true;
-  const isReadmeExplicitFailed = reviewChecklist['shipped_readme_valid'] === false;
-  const isReadmePassed =
-    isReadmeExplicitPassed || (isReadmeExplicitFailed ? false : hasReadme);
+  const currentReadmeStatus: ReadmeStatus | undefined =
+    reviewChecklist['shipped_readme_status'] ||
+    (reviewChecklist['shipped_readme_valid'] === true
+      ? 'pass'
+      : reviewChecklist['shipped_readme_valid'] === false
+      ? 'fail'
+      : undefined);
+
+  const isReadmePassed = currentReadmeStatus === 'pass' || currentReadmeStatus === 'ai_generated';
+  const isReadmeAi =
+    currentReadmeStatus === 'ai_generated' ||
+    reviewChecklist['shipped_readme_status'] === 'ai_generated' ||
+    reviewChecklist['flag_ai_generated'] === true;
+
+  const handleReadmeStatusChange = (val: ReadmeStatus) => {
+    onToggleChecklist?.('shipped_readme_status', val);
+    if (val === 'pass') {
+      onToggleChecklist?.('shipped_readme_valid', true);
+    } else if (val === 'ai_generated') {
+      onToggleChecklist?.('shipped_readme_valid', true);
+      onToggleChecklist?.('flag_ai_generated', true);
+    } else if (val === 'low_quality') {
+      onToggleChecklist?.('shipped_readme_valid', false);
+    } else if (val === 'fail') {
+      onToggleChecklist?.('shipped_readme_valid', false);
+    }
+  };
+
+  // Automated README AI Heuristics Analysis (em-dashes, emoji density, LLM phrases)
+  const readmeAiAnalysis = useMemo(() => {
+    if (!readmeContent || readmeContent.length < 40) return null;
+
+    const reasons: string[] = [];
+    // 1. Em-dashes / En-dashes detection
+    const emDashMatches = readmeContent.match(/—|–/g) || [];
+    if (emDashMatches.length >= 2) {
+      reasons.push(`${emDashMatches.length} em/en-dashes detected (characteristic of LLM prose)`);
+    }
+
+    // 2. High emoji density detection
+    const emojiMatches = readmeContent.match(/[\p{Extended_Pictographic}]/gu) || [];
+    if (emojiMatches.length >= 6) {
+      reasons.push(`High emoji density (${emojiMatches.length} emojis found, typical of AI marketing text)`);
+    }
+
+    // 3. Characteristic LLM buzzwords
+    const llmKeywords = [
+      /\bdelve\b/i,
+      /\btestament\b/i,
+      /\bin conclusion\b/i,
+      /\bunleash(?:ing)?\b/i,
+      /\bembark(?:ing)?\b/i,
+      /\bgame-changer\b/i,
+      /\bseamlessly\b/i,
+      /\bvibrant\b/i,
+      /\brevolutionize\b/i,
+      /\bharness(?:ing)? the power\b/i,
+    ];
+    const foundKeywords = llmKeywords
+      .filter((rx) => rx.test(readmeContent))
+      .map((rx) => rx.source.replace(/\\b/g, '').replace(/\(\?:ing\)\?/, ''));
+
+    if (foundKeywords.length > 0) {
+      reasons.push(`LLM buzzwords found: "${foundKeywords.slice(0, 3).join('", "')}"`);
+    }
+
+    if (reasons.length === 0) return null;
+
+    return {
+      reasons,
+      emDashCount: emDashMatches.length,
+      emojiCount: emojiMatches.length,
+    };
+  }, [readmeContent]);
 
   // Render README with relative image and link resolution
   const renderedReadme = useMemo(() => {
@@ -158,7 +227,7 @@ export const ReadmeDeliverablesStage: React.FC<ReadmeDeliverablesStageProps> = (
         <div>
           <div className="flex items-center gap-2">
             <span className="text-xs font-mono font-bold uppercase tracking-wider text-brand-orange bg-brand-orange/10 px-2 py-0.5 rounded border border-brand-orange/20">
-              Stage 2 of 6
+              Stage 2 of 7
             </span>
             <span className="text-xs text-content-tertiary">Deliverables & README Audit</span>
           </div>
@@ -168,6 +237,16 @@ export const ReadmeDeliverablesStage: React.FC<ReadmeDeliverablesStageProps> = (
           <p className="text-xs text-content-tertiary mt-1 max-w-2xl">
             Audit core project metadata: title, repository source code, untruncated description, submitted deliverable image, and README setup instructions.
           </p>
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={onAdvance}
+            className="px-4 py-2 rounded-xl bg-brand-orange hover:bg-orange-600 text-white text-xs font-bold flex items-center gap-1.5 transition-all shadow-md cursor-pointer"
+          >
+            <span>Next: Playable Demo & Testing →</span>
+          </button>
         </div>
       </div>
 
@@ -192,12 +271,14 @@ export const ReadmeDeliverablesStage: React.FC<ReadmeDeliverablesStageProps> = (
               <span className="text-xs font-semibold text-white">Project Title</span>
               <span
                 className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase ${
-                  isNamePassed
+                  isNameExplicitPassed
                     ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                    : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                    : isNameExplicitFailed
+                    ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                    : 'bg-zinc-800 text-zinc-400 border border-zinc-700'
                 }`}
               >
-                {isNamePassed ? 'PASS' : 'FAIL'}
+                {isNameExplicitPassed ? 'PASS' : isNameExplicitFailed ? 'FAIL' : 'PENDING'}
               </span>
             </div>
             <p className="text-sm font-bold text-white tracking-wide truncate">
@@ -233,12 +314,14 @@ export const ReadmeDeliverablesStage: React.FC<ReadmeDeliverablesStageProps> = (
                   {idx === 0 && (
                     <span
                       className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase ${
-                        isCodePassed
+                        isCodeExplicitPassed
                           ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                          : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                          : isCodeExplicitFailed
+                          ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                          : 'bg-zinc-800 text-zinc-400 border border-zinc-700'
                       }`}
                     >
-                      {isCodePassed ? 'PASS' : 'FAIL'}
+                      {isCodeExplicitPassed ? 'PASS' : isCodeExplicitFailed ? 'FAIL' : 'PENDING'}
                     </span>
                   )}
                 </div>
@@ -271,7 +354,7 @@ export const ReadmeDeliverablesStage: React.FC<ReadmeDeliverablesStageProps> = (
 
               {idx === 0 && (
                 <div className="flex items-center gap-3 shrink-0">
-                  <span className="text-[11px] text-[#71717a] font-mono">Check</span>
+                  <span className="text-[11px] text-[#71717a] font-mono">Public Repo Exists</span>
                   <PassFailControl
                     label="Source Code"
                     status={
@@ -305,12 +388,14 @@ export const ReadmeDeliverablesStage: React.FC<ReadmeDeliverablesStageProps> = (
               <span className="text-xs font-semibold text-white">Project Description</span>
               <span
                 className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase ${
-                  isDescPassed
+                  isDescExplicitPassed
                     ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                    : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                    : isDescExplicitFailed
+                    ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                    : 'bg-zinc-800 text-zinc-400 border border-zinc-700'
                 }`}
               >
-                {isDescPassed ? 'PASS' : 'FAIL'}
+                {isDescExplicitPassed ? 'PASS' : isDescExplicitFailed ? 'FAIL' : 'PENDING'}
               </span>
               <span className="text-[11px] font-mono text-[#a1a1aa]">
                 ({cleanDescription.length} characters)
@@ -348,12 +433,14 @@ export const ReadmeDeliverablesStage: React.FC<ReadmeDeliverablesStageProps> = (
             </h3>
             <span
               className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase ml-2 ${
-                isScreenshotPassed
+                isScreenshotExplicitPassed
                   ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                  : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                  : isScreenshotExplicitFailed
+                  ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                  : 'bg-zinc-800 text-zinc-400 border border-zinc-700'
               }`}
             >
-              {isScreenshotPassed ? 'PASS' : 'FAIL'}
+              {isScreenshotExplicitPassed ? 'PASS' : isScreenshotExplicitFailed ? 'FAIL' : 'PENDING'}
             </span>
           </div>
 
@@ -422,20 +509,56 @@ export const ReadmeDeliverablesStage: React.FC<ReadmeDeliverablesStageProps> = (
                 branch: {gitHubData.defaultBranch}
               </span>
             )}
+            {isReadmeAi && (
+              <span className="text-[10px] font-mono text-purple-300 bg-purple-950/60 border border-purple-500/40 px-2 py-0.5 rounded flex items-center gap-1 font-bold">
+                <Bot className="w-3 h-3" />
+                <span>AI-Generated</span>
+              </span>
+            )}
           </div>
 
-          {codeUrl && (
-            <a
-              href={`${codeUrl}#readme`}
-              target="_blank"
-              rel="noreferrer"
-              className="px-3 py-1.5 rounded-lg bg-[#27272a] hover:bg-[#3f3f46] text-[#e4e4e7] text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
-            >
-              <span>View on GitHub</span>
-              <ExternalLink className="w-3.5 h-3.5" />
-            </a>
-          )}
+          <div className="flex items-center gap-2.5">
+            {codeUrl && (
+              <a
+                href={`${codeUrl}#readme`}
+                target="_blank"
+                rel="noreferrer"
+                className="px-3 py-1.5 rounded-lg bg-[#27272a] hover:bg-[#3f3f46] text-[#e4e4e7] text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <span>View on GitHub</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </a>
+            )}
+          </div>
         </div>
+
+        {/* Automated AI Heuristics Detection Banner */}
+        {readmeAiAnalysis && (
+          <div className="mx-4 my-3 p-3.5 rounded-xl bg-purple-950/40 border border-purple-500/50 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-md">
+            <div className="flex items-start gap-2.5">
+              <Bot className="w-4 h-4 text-purple-400 shrink-0 mt-0.5" />
+              <div className="text-xs space-y-0.5">
+                <span className="font-bold text-purple-300 block">
+                  AI Prose Signatures Detected in Documentation
+                </span>
+                <p className="text-purple-200/90 leading-relaxed">
+                  {readmeAiAnalysis.reasons.join(' • ')}
+                </p>
+              </div>
+            </div>
+
+            {currentReadmeStatus !== 'ai_generated' && (
+              <button
+                type="button"
+                onClick={() => handleReadmeStatusChange('ai_generated')}
+                className="px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs shrink-0 cursor-pointer shadow-sm flex items-center gap-1.5"
+              >
+                <Bot className="w-3.5 h-3.5" />
+                <span>Select AI-Generated</span>
+              </button>
+            )}
+          </div>
+        )}
 
         {/* README Body Viewer */}
         <div className="p-8 select-text bg-[#0d0d0f] overflow-y-auto max-h-[700px]">
@@ -455,17 +578,31 @@ export const ReadmeDeliverablesStage: React.FC<ReadmeDeliverablesStageProps> = (
           )}
         </div>
 
-        {/* README Footer: Pass/Fail Control Placed Directly Beneath */}
-        <div className="p-4 bg-[#18181b] border-t border-[#27272a] flex items-center justify-between">
+        {/* README Footer: MultiOptionSelector Placed Directly Beneath */}
+        <div className="p-4 bg-[#18181b] border-t border-[#27272a] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <span
               className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase ${
-                isReadmePassed
+                currentReadmeStatus === 'pass'
                   ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                  : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                  : currentReadmeStatus === 'ai_generated'
+                  ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
+                  : currentReadmeStatus === 'low_quality'
+                  ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                  : currentReadmeStatus === 'fail'
+                  ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                  : 'bg-zinc-800 text-zinc-400 border border-zinc-700'
               }`}
             >
-              {isReadmePassed ? 'PASS' : 'FAIL'}
+              {currentReadmeStatus === 'ai_generated'
+                ? 'AI-GENERATED'
+                : currentReadmeStatus === 'low_quality'
+                ? 'LOW QUALITY'
+                : currentReadmeStatus === 'pass'
+                ? 'PASS'
+                : currentReadmeStatus === 'fail'
+                ? 'FAIL'
+                : 'PENDING'}
             </span>
             <span className="text-xs text-[#a1a1aa]">
               {readmeContent
@@ -475,23 +612,35 @@ export const ReadmeDeliverablesStage: React.FC<ReadmeDeliverablesStageProps> = (
           </div>
 
           <div className="flex items-center gap-3">
-            <span className="text-[11px] text-[#71717a] font-mono">README Check</span>
-            <PassFailControl
-              label="README"
-              status={
-                isReadmeExplicitPassed ? true : isReadmeExplicitFailed ? false : undefined
-              }
-              onPass={() => handlePass('shipped_readme_valid')}
-              onFail={() => handleFail('shipped_readme_valid')}
+            <span className="text-[11px] text-[#71717a] font-mono">README Quality</span>
+            <MultiOptionSelector<ReadmeStatus>
+              value={currentReadmeStatus}
+              onChange={handleReadmeStatusChange}
+              options={README_OPTIONS}
+              size="sm"
             />
           </div>
         </div>
+
+        {/* Optional Custom Reason Input for README */}
+        {currentReadmeStatus && (
+          <div className="p-3 bg-[#121214] border-t border-[#27272a] flex items-center gap-2">
+            <span className="text-[11px] font-mono text-[#a1a1aa] shrink-0">Reason / Note:</span>
+            <input
+              type="text"
+              value={reviewChecklist['note_shipped_readme'] || ''}
+              onChange={(e) => onToggleChecklist?.('note_shipped_readme', e.target.value)}
+              placeholder="Optional specific reason (e.g. missing build instructions, sparse 2-line readme, prompt template...)"
+              className="flex-1 bg-[#18181b] border border-[#27272a] rounded-lg px-2.5 py-1 text-xs text-white placeholder-[#71717a] focus:outline-none focus:border-brand-orange"
+            />
+          </div>
+        )}
       </div>
 
       {/* Footer Navigation Bar */}
       <div className="pt-4 border-t border-border-subtle flex items-center justify-between shrink-0">
         <div className="flex items-center gap-3 text-xs">
-          {isNamePassed && isCodePassed && isDescPassed && isScreenshotPassed && isReadmePassed ? (
+          {isNameExplicitPassed && isCodeExplicitPassed && isDescExplicitPassed && isScreenshotExplicitPassed && isReadmePassed ? (
             <span className="text-emerald-400 font-semibold flex items-center gap-1.5">
               <CheckCircle2 className="w-4 h-4" />
               <span>All Core Deliverables & Documentation Verified</span>

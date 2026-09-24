@@ -11,11 +11,13 @@
 export type ProjectType = "software" | "hardware";
 
 export type CockpitStatus = 
-  | "pending"        // Awaiting first-pass reviewer
-  | "in_review"      // Open in a reviewer session
-  | "pre_approved"   // Approved by reviewer, waiting for admin copy/paste
-  | "rejected"       // Rejected by reviewer or admin
-  | "flagged_fraud"; // Flagged for suspicious activity / bot script
+  | "pending"                // Awaiting first-pass reviewer (editable)
+  | "in_review"              // Open in a reviewer session
+  | "pre_approved"           // All 1st-pass reviewed projects (view-only)
+  | "completed_pre_approved" // Processed by second-pass / admin
+  | "approved"               // Raw ingested approved
+  | "rejected"               // Raw ingested rejected
+  | "flagged_fraud";         // Raw ingested flagged fraud
 
 export type LiveReviewStatus = "Pending" | "Rejected" | "Fraud" | string;
 
@@ -96,7 +98,8 @@ export interface VerdictDetails {
   hoursJustification: string;
   publicFeedback: string;
   internalNotes: string;
-  appliedChecklist: Record<string, boolean>;
+  appliedChecklist: Record<string, any>;
+  checklistNotes?: Record<string, string>;
   reviewerName: string;
   decidedAt: string; // ISO 8601
 }
@@ -171,7 +174,8 @@ export interface SubmitVerdictRequest {
   hoursJustification: string;
   publicFeedback?: string;
   internalNotes?: string;
-  appliedChecklist?: Record<string, boolean>;
+  appliedChecklist?: Record<string, any>;
+  checklistNotes?: Record<string, string>;
   reviewerName?: string;
 }
 
@@ -201,6 +205,8 @@ export interface QueueStats {
   pending: number;
   inReview: number;
   preApproved: number;
+  completedPreApproved?: number;
+  approved?: number;
   rejected: number;
   flaggedFraud: number;
   totalApprovedHours: number;

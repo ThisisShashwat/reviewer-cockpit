@@ -5,7 +5,7 @@ import {
   ArrowRight,
   Lock,
 } from 'lucide-react';
-import { CockpitProject, CockpitStatus, QueueStats } from '../../lib/types';
+import { CockpitProject, QueueStats } from '../../lib/types';
 
 interface QueuePageProps {
   projects: CockpitProject[];
@@ -77,6 +77,8 @@ export const QueuePage: React.FC<QueuePageProps> = ({
       all: subset.length,
       pending: subset.filter((p) => p.cockpitStatus === 'pending').length,
       preApproved: subset.filter((p) => p.cockpitStatus === 'pre_approved').length,
+      completedPreApproved: subset.filter((p) => p.cockpitStatus === 'completed_pre_approved').length,
+      approved: subset.filter((p) => p.cockpitStatus === 'approved').length,
       rejected: subset.filter((p) => p.cockpitStatus === 'rejected').length,
       flaggedFraud: subset.filter((p) => p.cockpitStatus === 'flagged_fraud').length,
     };
@@ -118,30 +120,46 @@ export const QueuePage: React.FC<QueuePageProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [filteredProjects, highlightedIndex, onSelectProject]);
 
-  const renderStatusBadge = (status: CockpitStatus) => {
+  const renderStatusBadge = (projectItem: CockpitProject) => {
+    const status = projectItem.cockpitStatus;
     switch (status) {
-      case 'pre_approved':
+      case 'pre_approved': {
+        const action = projectItem.cockpitVerdict?.action;
+        const actionLabel = action === 'reject' ? 'Reject' : action === 'flag_fraud' ? 'Fraud' : 'Approve';
         return (
-          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-semantic-successBg text-semantic-success border border-semantic-successBorder">
-            Pre-Approved
+          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+            Pre-Approved ({actionLabel})
+          </span>
+        );
+      }
+      case 'completed_pre_approved':
+        return (
+          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-purple-500/10 text-purple-400 border border-purple-500/20">
+            Completed Pre-Approved
+          </span>
+        );
+      case 'approved':
+        return (
+          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+            Approved (Raw Ingest)
           </span>
         );
       case 'rejected':
         return (
           <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-semantic-dangerBg text-semantic-danger border border-semantic-dangerBorder">
-            Rejected
+            Rejected (Raw Ingest)
           </span>
         );
       case 'flagged_fraud':
         return (
           <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-semantic-warningBg text-semantic-warning border border-semantic-warningBorder">
-            Flagged Fraud
+            Fraud (Raw Ingest)
           </span>
         );
       default:
         return (
           <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-semantic-infoBg text-semantic-info border border-semantic-infoBorder">
-            Pending
+            Pending Review
           </span>
         );
     }
@@ -195,7 +213,7 @@ export const QueuePage: React.FC<QueuePageProps> = ({
         {/* Filter Controls & Live Search Bar */}
         <div className="mt-5 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
           {/* Status Filters */}
-          <div className="flex items-center gap-1 bg-canvas-subtle p-1 rounded-lg border border-border-subtle text-xs">
+          <div className="flex items-center gap-1 bg-canvas-subtle p-1 rounded-lg border border-border-subtle text-xs flex-wrap">
             <button
               type="button"
               onClick={() => setSelectedStatus('pending')}
@@ -217,6 +235,28 @@ export const QueuePage: React.FC<QueuePageProps> = ({
               }`}
             >
               Pre-Approved ({statusCounts.preApproved})
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedStatus('completed_pre_approved')}
+              className={`px-3 py-1 rounded-md font-medium transition-colors ${
+                selectedStatus === 'completed_pre_approved'
+                  ? 'bg-canvas-card text-purple-400 shadow-sm font-semibold'
+                  : 'text-content-tertiary hover:text-content-primary'
+              }`}
+            >
+              Completed ({statusCounts.completedPreApproved})
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedStatus('approved')}
+              className={`px-3 py-1 rounded-md font-medium transition-colors ${
+                selectedStatus === 'approved'
+                  ? 'bg-canvas-card text-emerald-400 shadow-sm font-semibold'
+                  : 'text-content-tertiary hover:text-content-primary'
+              }`}
+            >
+              Approved ({statusCounts.approved})
             </button>
             <button
               type="button"
@@ -414,7 +454,7 @@ export const QueuePage: React.FC<QueuePageProps> = ({
 
                       {/* Status */}
                       <td className="py-3 px-4 whitespace-nowrap">
-                        {renderStatusBadge(p.cockpitStatus)}
+                        {renderStatusBadge(p)}
                       </td>
 
                       {/* Action */}
@@ -427,7 +467,13 @@ export const QueuePage: React.FC<QueuePageProps> = ({
                           }}
                           className="px-3 py-1 rounded-lg bg-canvas-card border border-border-subtle text-xs font-semibold text-content-primary hover:bg-brand-orange hover:text-white hover:border-brand-orange transition-colors inline-flex items-center gap-1 shadow-sm"
                         >
-                          <span>Review</span>
+                          <span>
+                            {p.cockpitStatus === 'pending'
+                              ? 'Review'
+                              : p.cockpitStatus === 'pre_approved'
+                              ? 'Audit / Dispatch'
+                              : 'View'}
+                          </span>
                           <ArrowRight className="w-3 h-3" />
                         </button>
                       </td>

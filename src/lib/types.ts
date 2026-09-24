@@ -21,6 +21,8 @@ export type CockpitStatus =
   | 'pending'
   | 'in_review'
   | 'pre_approved'
+  | 'completed_pre_approved'
+  | 'approved'
   | 'rejected'
   | 'flagged_fraud';
 
@@ -49,6 +51,13 @@ export interface AuditLogEntry {
   metadata?: Record<string, any>;
 }
 
+export interface UserNote {
+  id: string;
+  text: string;
+  author: string;
+  createdAt: string;
+}
+
 export interface VerdictDetails {
   action: 'pre_approve' | 'reject' | 'flag_fraud';
   approvedHours: number;
@@ -56,7 +65,8 @@ export interface VerdictDetails {
   hoursJustification: string;
   publicFeedback: string;
   internalNotes: string;
-  appliedChecklist: Record<string, boolean>;
+  appliedChecklist: Record<string, any>;
+  checklistNotes?: Record<string, string>;
   reviewerName: string;
   decidedAt: string;
 }
@@ -119,7 +129,8 @@ export interface SubmitVerdictRequest {
   hoursJustification: string;
   publicFeedback?: string;
   internalNotes?: string;
-  appliedChecklist?: Record<string, boolean>;
+  appliedChecklist?: Record<string, any>;
+  checklistNotes?: Record<string, string>;
   reviewerName?: string;
 }
 
@@ -143,6 +154,8 @@ export interface QueueStats {
   pending: number;
   inReview: number;
   preApproved: number;
+  completedPreApproved?: number;
+  approved?: number;
   rejected: number;
   flaggedFraud: number;
   totalApprovedHours: number;
@@ -176,6 +189,23 @@ export interface CommitFileChange {
   additions: number;
   deletions: number;
   status: string;
+  patch?: string;
+}
+
+export interface GitHubUserRepo {
+  id: number;
+  name: string;
+  fullName: string;
+  htmlUrl: string;
+  description: string | null;
+  language: string | null;
+  stars: number;
+  forks: number;
+  isFork: boolean;
+  createdAt: string;
+  updatedAt: string;
+  pushedAt: string;
+  size: number;
 }
 
 export interface GitHubCommit {

@@ -1,7 +1,14 @@
+try {
+  process.loadEnvFile?.();
+} catch {
+  // .env file not present or not required
+}
+
 import cors from "cors";
 import express from "express";
 import { apiRouter } from "./routes.js";
 import { storage } from "./storage.js";
+
 
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3001;

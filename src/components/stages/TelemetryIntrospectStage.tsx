@@ -1,28 +1,61 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import {
   Activity,
   AlertTriangle,
   Bot,
+  Check,
   Code2,
   ExternalLink,
   FolderCheck,
   RefreshCw,
   Undo2,
+  X,
+  Zap,
 } from 'lucide-react';
 import { fetchHackatimeData } from '../../lib/api';
-import { CockpitProject, HackatimeProjectStats } from '../../lib/types';
-import { PassFailControl } from '../common/PassFailControl';
+import { CockpitProject, HackatimeProjectStats, GitHubRepoData } from '../../lib/types';
+import { MultiOptionSelector, SelectorOption } from '../common/MultiOptionSelector';
 
 interface TelemetryIntrospectStageProps {
   project: CockpitProject;
+  gitHubData?: Partial<GitHubRepoData>;
   onAdvance: () => void;
   onEarlyExit?: (reason: string) => void;
-  reviewChecklist?: Record<string, boolean>;
-  onToggleChecklist?: (key: string, status?: boolean) => void;
+  reviewChecklist?: Record<string, any>;
+  onToggleChecklist?: (key: string, status?: any) => void;
 }
+
+export type TelemetryStatus = 'pass' | 'missing' | 'suspicious';
+
+const TELEMETRY_OPTIONS: SelectorOption<TelemetryStatus>[] = [
+  {
+    id: 'pass',
+    label: 'Pass (Heartbeats Verified)',
+    color: 'emerald',
+    icon: Check,
+    description: 'Heartbeats match claimed hours and language distribution looks authentic',
+  },
+  {
+    id: 'missing',
+    label: 'Missing Telemetry',
+    color: 'amber',
+    icon: AlertTriangle,
+    description: 'No telemetry heartbeats recorded or project profile is private/untracked',
+  },
+  {
+    id: 'suspicious',
+    label: 'Suspicious Telemetry',
+    color: 'rose',
+    icon: X,
+    description: 'Sudden artificial heartbeat spikes, idle editor hours, or mismatched timestamps',
+  },
+];
+
+const telemetryCache = new Map<string, Partial<HackatimeProjectStats>>();
 
 export const TelemetryIntrospectStage: React.FC<TelemetryIntrospectStageProps> = ({
   project,
+  gitHubData,
   onAdvance,
   onEarlyExit: _onEarlyExit,
   reviewChecklist = {},
@@ -33,8 +66,11 @@ export const TelemetryIntrospectStage: React.FC<TelemetryIntrospectStageProps> =
     selectedProjName.replace(/\s*\([^)]*\)/g, '').trim() || project.projectName;
 
   const [activeProjectName, setActiveProjectName] = useState(initialCleanName);
-  const [stats, setStats] = useState<Partial<HackatimeProjectStats> | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const cacheKey = `${project.hackatimeId || ''}:${activeProjectName}`;
+  const [stats, setStats] = useState<Partial<HackatimeProjectStats> | null>(
+    () => telemetryCache.get(cacheKey) || null
+  );
+  const [isLoading, setIsLoading] = useState<boolean>(() => !telemetryCache.has(cacheKey));
   const [activeLangTab, setActiveLangTab] = useState<'project' | 'lifetime'>('project');
   const [iframeKey, setIframeKey] = useState(0);
 
@@ -44,30 +80,43 @@ export const TelemetryIntrospectStage: React.FC<TelemetryIntrospectStageProps> =
 
   useEffect(() => {
     let mounted = true;
+    const currentKey = `${project.hackatimeId || ''}:${activeProjectName}`;
+
+    if (telemetryCache.has(currentKey)) {
+      setStats(telemetryCache.get(currentKey)!);
+      setIsLoading(false);
+      return;
+    }
+
     setIsLoading(true);
 
     if (project.hackatimeId) {
       fetchHackatimeData(project.hackatimeId, activeProjectName)
         .then((res) => {
+          telemetryCache.set(currentKey, res);
           if (mounted) {
             setStats(res);
             setIsLoading(false);
           }
         })
         .catch(() => {
+          const errData = {
+            error: 'Hackatime API unreachable or profile is private',
+            isProjectFound: false,
+          };
+          telemetryCache.set(currentKey, errData);
           if (mounted) {
-            setStats({
-              error: 'Hackatime API unreachable or profile is private',
-              isProjectFound: false,
-            });
+            setStats(errData);
             setIsLoading(false);
           }
         });
     } else {
-      setStats({
+      const errData = {
         error: 'No Hackatime ID provided in submission',
         isProjectFound: false,
-      });
+      };
+      telemetryCache.set(currentKey, errData);
+      setStats(errData);
       setIsLoading(false);
     }
 
@@ -102,17 +151,72 @@ export const TelemetryIntrospectStage: React.FC<TelemetryIntrospectStageProps> =
 
   const introspectUrl = `https://introspect.sahil.ink/?${introspectParams.toString()}`;
 
-  const handlePass = (key: string) => {
-    onToggleChecklist?.(key, true);
-  };
+  const currentTelemetryStatus: TelemetryStatus | undefined =
+    reviewChecklist['telemetry_heartbeats_status'] ||
+    (reviewChecklist['telemetry_heartbeats_verified'] === true
+      ? 'pass'
+      : reviewChecklist['telemetry_heartbeats_verified'] === false
+      ? 'suspicious'
+      : undefined);
 
-  const handleFail = (key: string) => {
-    onToggleChecklist?.(key, false);
+  const handleTelemetryStatusChange = (val: TelemetryStatus) => {
+    onToggleChecklist?.('telemetry_heartbeats_status', val);
+    if (val === 'pass') {
+      onToggleChecklist?.('telemetry_heartbeats_verified', true);
+      onToggleChecklist?.('hackatime_sanity', true);
+    } else if (val === 'missing') {
+      onToggleChecklist?.('telemetry_heartbeats_verified', false);
+      onToggleChecklist?.('hackatime_sanity', false);
+    } else if (val === 'suspicious') {
+      onToggleChecklist?.('telemetry_heartbeats_verified', false);
+      onToggleChecklist?.('hackatime_sanity', false);
+    }
   };
 
   const isProjectNameManuallyOverridden = activeProjectName !== initialCleanName;
   const projectHoursNum = stats?.projectSeconds ? stats.projectSeconds / 3600 : 0;
   const hasLongClaim = project.submittedHours > 24 || projectHoursNum > 24;
+
+  // Calculate total code additions from GitHub commits
+  const totalCodeAdditions = useMemo(() => {
+    const rawCommits = gitHubData?.commits || [];
+    let sum = 0;
+    rawCommits.forEach((c) => {
+      if (c.files && c.files.length > 0) {
+        c.files.forEach((f) => {
+          const lower = f.filename.toLowerCase();
+          const isDocOrAsset =
+            lower.endsWith('.md') ||
+            lower.endsWith('.txt') ||
+            lower.endsWith('.png') ||
+            lower.endsWith('.jpg') ||
+            lower.endsWith('.jpeg') ||
+            lower.endsWith('.svg') ||
+            lower.endsWith('.ico') ||
+            lower.endsWith('.lock') ||
+            lower.endsWith('-lock.json');
+          if (!isDocOrAsset) {
+            sum += f.additions || 0;
+          }
+        });
+      } else {
+        sum += c.additions || 0;
+      }
+    });
+    return sum;
+  }, [gitHubData?.commits]);
+
+  const effectiveHours = projectHoursNum > 0 ? projectHoursNum : project.submittedHours || 0;
+  const linesPerHour =
+    effectiveHours > 0
+      ? Math.round(totalCodeAdditions / Math.max(0.1, effectiveHours))
+      : totalCodeAdditions;
+
+  // Unrealistic velocity condition:
+  // e.g. >= 400 loc/hr with at least 500 lines total, OR >= 800 lines with <= 1 hr claimed/tracked
+  const isUnrealisticVelocity =
+    totalCodeAdditions >= 500 &&
+    (linesPerHour >= 400 || (effectiveHours <= 1.0 && totalCodeAdditions >= 800));
 
   return (
     <div className="h-full overflow-y-auto p-8 space-y-6 max-w-6xl mx-auto flex flex-col">
@@ -121,13 +225,21 @@ export const TelemetryIntrospectStage: React.FC<TelemetryIntrospectStageProps> =
         <div>
           <div className="flex items-center gap-2">
             <span className="text-xs font-mono font-bold uppercase tracking-wider text-brand-orange bg-brand-orange/10 px-2 py-0.5 rounded border border-brand-orange/20">
-              Stage 4 of 6
+              Stage 4 of 7
             </span>
             <span className="text-xs text-content-tertiary">Telemetry & Timeline Audit</span>
           </div>
-          <h2 className="text-lg font-bold text-content-primary mt-1 font-heading">
-            Hackatime Telemetry & Activity Timeline
-          </h2>
+          <div className="flex items-center gap-2.5">
+            <h2 className="text-lg font-bold text-content-primary mt-1 font-heading">
+              Hackatime Telemetry & Activity Timeline
+            </h2>
+            {isUnrealisticVelocity && (
+              <span className="mt-1 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase bg-rose-500/20 text-rose-300 border border-rose-500/40 flex items-center gap-1 animate-pulse shadow-sm">
+                <Zap className="w-3 h-3 text-rose-400" />
+                <span>Unrealistic Velocity ({linesPerHour.toLocaleString()} loc/h)</span>
+              </span>
+            )}
+          </div>
           <p className="text-xs text-content-tertiary mt-1 max-w-2xl">
             Audit coding heartbeats, velocity, AI assistance share, and interactive commit timeline for @<strong className="text-content-primary">{project.githubUsername}</strong>.
           </p>
@@ -166,6 +278,14 @@ export const TelemetryIntrospectStage: React.FC<TelemetryIntrospectStageProps> =
               <ExternalLink className="w-3 h-3 text-content-muted" />
             </a>
           )}
+
+          <button
+            type="button"
+            onClick={onAdvance}
+            className="px-3.5 py-1.5 rounded-lg bg-[#ff6b35] hover:bg-[#ea580c] text-white text-xs font-bold flex items-center gap-1.5 transition-all shadow-md cursor-pointer shrink-0"
+          >
+            <span>Next: Commits & AI →</span>
+          </button>
         </div>
       </div>
 
@@ -179,6 +299,12 @@ export const TelemetryIntrospectStage: React.FC<TelemetryIntrospectStageProps> =
               <h3 className="text-xs font-bold uppercase tracking-wider text-white">
                 Hackatime Project Telemetry
               </h3>
+              {isUnrealisticVelocity && (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase bg-rose-500/20 text-rose-300 border border-rose-500/40 flex items-center gap-1 animate-pulse shadow-sm">
+                  <Zap className="w-3 h-3 text-rose-400" />
+                  <span>Unrealistic Velocity</span>
+                </span>
+              )}
             </div>
 
             {/* Renamed project switcher */}
@@ -216,7 +342,7 @@ export const TelemetryIntrospectStage: React.FC<TelemetryIntrospectStageProps> =
           </div>
 
           {/* Metric Chips */}
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div className="p-3 rounded-xl bg-[#18181b] border border-[#27272a]">
               <span className="text-[10px] uppercase tracking-wider text-[#a1a1aa] font-mono block">
                 Claimed Hours
@@ -246,7 +372,63 @@ export const TelemetryIntrospectStage: React.FC<TelemetryIntrospectStageProps> =
                 {isLoading ? '...' : stats?.totalHoursReadable || '—'}
               </span>
             </div>
+
+            <div
+              className={`p-3 rounded-xl border ${
+                isUnrealisticVelocity
+                  ? 'bg-rose-950/30 border-rose-500/40'
+                  : 'bg-[#18181b] border-[#27272a]'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-0.5">
+                <span className="text-[10px] uppercase tracking-wider text-[#a1a1aa] font-mono block">
+                  Coding Velocity
+                </span>
+                {isUnrealisticVelocity ? (
+                  <span className="px-1.5 py-0.2 rounded text-[9px] font-mono font-bold uppercase bg-rose-500/30 text-rose-300 border border-rose-400/40">
+                    Abnormal
+                  </span>
+                ) : linesPerHour > 250 ? (
+                  <span className="px-1.5 py-0.2 rounded text-[9px] font-mono font-bold uppercase bg-amber-500/20 text-amber-300">
+                    Fast
+                  </span>
+                ) : (
+                  <span className="px-1.5 py-0.2 rounded text-[9px] font-mono font-bold uppercase bg-emerald-500/20 text-emerald-300">
+                    Normal
+                  </span>
+                )}
+              </div>
+              <span
+                className={`text-lg font-mono font-bold ${
+                  isUnrealisticVelocity
+                    ? 'text-rose-400'
+                    : linesPerHour > 250
+                    ? 'text-amber-400'
+                    : 'text-emerald-400'
+                }`}
+              >
+                {totalCodeAdditions > 0 ? `${linesPerHour.toLocaleString()} loc/h` : '—'}
+              </span>
+            </div>
           </div>
+
+          {/* Unrealistic Typing Velocity Alert Card */}
+          {isUnrealisticVelocity && (
+            <div className="p-3.5 rounded-xl bg-rose-950/40 border border-rose-500/50 text-rose-200 text-xs flex items-start gap-2.5 shadow-md">
+              <Zap className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-rose-300">Unrealistic Velocity Alert</span>
+                  <span className="px-1.5 py-0.2 rounded text-[9px] font-mono font-bold uppercase bg-rose-500/30 text-rose-300 border border-rose-400/40">
+                    {linesPerHour.toLocaleString()} lines/hr
+                  </span>
+                </div>
+                <p className="text-[11px] text-rose-200/90 mt-0.5 leading-relaxed">
+                  Repository introduced <strong>{totalCodeAdditions.toLocaleString()} lines of code</strong> across <strong>{effectiveHours.toFixed(1)} hrs</strong> (~{(linesPerHour / 60).toFixed(1)} lines/min). Organic human coding velocity is typically 30–100 lines/hr. Velocity through the roof often indicates an uncredited tutorial clone, template import, or monolithic AI vibe dump.
+                </p>
+              </div>
+            </div>
+          )}
 
           {/* Long Claim Notice */}
           {hasLongClaim && (
@@ -367,14 +549,50 @@ export const TelemetryIntrospectStage: React.FC<TelemetryIntrospectStageProps> =
             </div>
           </div>
 
-          <div className="pt-3 border-t border-[#27272a] flex items-center justify-between">
-            <span className="text-xs text-[#a1a1aa]">Telemetry Sanity Check</span>
-            <PassFailControl
-              label="Telemetry Sanity"
-              status={reviewChecklist.hackatime_sanity}
-              onPass={() => handlePass('hackatime_sanity')}
-              onFail={() => handleFail('hackatime_sanity')}
-            />
+          <div className="pt-3 border-t border-[#27272a] space-y-2">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-[#a1a1aa]">Telemetry Verdict</span>
+                <span
+                  className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase ${
+                    currentTelemetryStatus === 'pass'
+                      ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                      : currentTelemetryStatus === 'missing'
+                      ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                      : currentTelemetryStatus === 'suspicious'
+                      ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                      : 'bg-zinc-800 text-zinc-400 border border-zinc-700'
+                  }`}
+                >
+                  {currentTelemetryStatus === 'pass'
+                    ? 'PASS'
+                    : currentTelemetryStatus === 'missing'
+                    ? 'MISSING'
+                    : currentTelemetryStatus === 'suspicious'
+                    ? 'SUSPICIOUS'
+                    : 'PENDING'}
+                </span>
+              </div>
+              <MultiOptionSelector<TelemetryStatus>
+                value={currentTelemetryStatus}
+                onChange={handleTelemetryStatusChange}
+                options={TELEMETRY_OPTIONS}
+                size="xs"
+              />
+            </div>
+
+            {currentTelemetryStatus && (
+              <div className="flex items-center gap-2 pt-1">
+                <span className="text-[11px] font-mono text-[#a1a1aa] shrink-0">Reason / Note:</span>
+                <input
+                  type="text"
+                  value={reviewChecklist['note_telemetry_heartbeats'] || ''}
+                  onChange={(e) => onToggleChecklist?.('note_telemetry_heartbeats', e.target.value)}
+                  placeholder="Optional note (e.g. 0 project seconds, idle time spikes, unverified repo...)"
+                  className="flex-1 bg-[#18181b] border border-[#27272a] rounded-lg px-2.5 py-1 text-xs text-white placeholder-[#71717a] focus:outline-none focus:border-brand-orange"
+                />
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -393,9 +611,25 @@ export const TelemetryIntrospectStage: React.FC<TelemetryIntrospectStageProps> =
       {/* Footer Navigation Bar */}
       <div className="pt-4 border-t border-border-subtle flex items-center justify-between shrink-0">
         <div className="flex items-center gap-3 text-xs">
-          <span className="text-content-tertiary">
-            Confirm that hours match active development before auditing git diffs.
-          </span>
+          {currentTelemetryStatus === 'pass' ? (
+            <span className="text-emerald-400 font-semibold flex items-center gap-1.5">
+              <span>● Telemetry Heartbeats Verified</span>
+            </span>
+          ) : currentTelemetryStatus === 'missing' ? (
+            <span className="text-amber-400 font-semibold flex items-center gap-1.5">
+              <AlertTriangle className="w-4 h-4" />
+              <span>Telemetry Missing or Untracked</span>
+            </span>
+          ) : currentTelemetryStatus === 'suspicious' ? (
+            <span className="text-rose-400 font-semibold flex items-center gap-1.5">
+              <AlertTriangle className="w-4 h-4" />
+              <span>Telemetry Flagged as Suspicious</span>
+            </span>
+          ) : (
+            <span className="text-zinc-400 font-semibold flex items-center gap-1.5">
+              <span>Telemetry Audit Pending</span>
+            </span>
+          )}
         </div>
 
         <button

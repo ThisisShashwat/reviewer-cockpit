@@ -65,3 +65,153 @@ export function decodeHtmlEntities(text: string): string {
     .replace(/&#x2F;/g, '/')
     .replace(/&nbsp;/g, ' ');
 }
+
+/**
+ * Formats a clean commit breakdown string for copy-pasting.
+ * Rules:
+ * 1. If cosmetic & boilerplate and other types are under 10% and code commit is 90%+, do NOT mention them.
+ * 2. If a non-code category (cosmetic, boilerplate) has 0, 1, or 2 commits, do NOT mention it.
+ */
+export function formatCommitsSummary(
+  codeCount: number,
+  cosmeticCount: number = 0,
+  boilerplateCount: number = 0
+): string {
+  const total = codeCount + cosmeticCount + boilerplateCount;
+  if (total === 0) {
+    return '0 code related commits';
+  }
+
+  const codeRatio = codeCount / total;
+  const isHighCodeConcentration = codeRatio >= 0.9;
+  const nonCodeCount = cosmeticCount + boilerplateCount;
+
+  // If combined non-code commits are under 10% and code commits is >= 90%, only mention code commits
+  if (isHighCodeConcentration && nonCodeCount / total < 0.1) {
+    return `${codeCount} code related commit${codeCount === 1 ? '' : 's'}`;
+  }
+
+  const parts = [`${codeCount} code related commit${codeCount === 1 ? '' : 's'}`];
+
+  // Do not mention cosmetic commits if count <= 2 (0, 1, or 2), or if under 10% with 90%+ code
+  const cosmeticRatio = cosmeticCount / total;
+  const shouldOmitCosmetic =
+    cosmeticCount <= 2 || (isHighCodeConcentration && cosmeticRatio < 0.1);
+
+  if (!shouldOmitCosmetic && cosmeticCount > 0) {
+    parts.push(`${cosmeticCount} cosmetic commit${cosmeticCount === 1 ? '' : 's'}`);
+  }
+
+  // Do not mention boilerplate commits if count <= 2 (0, 1, or 2), or if under 10% with 90%+ code
+  const boilerplateRatio = boilerplateCount / total;
+  const shouldOmitBoilerplate =
+    boilerplateCount <= 2 || (isHighCodeConcentration && boilerplateRatio < 0.1);
+
+  if (!shouldOmitBoilerplate && boilerplateCount > 0) {
+    parts.push(`${boilerplateCount} boilerplate commit${boilerplateCount === 1 ? '' : 's'}`);
+  }
+
+  return parts.join(', ');
+}
+
+/**
+ * Analyzes and classifies a repository's commits into code-related, cosmetic, and boilerplate commits.
+ */
+export function summarizeCommits(
+  commits?: Array<{
+    files?: Array<{ filename: string; additions?: number; deletions?: number }>;
+    message?: string;
+    additions?: number;
+    deletions?: number;
+  }>
+): {
+  codeCount: number;
+  cosmeticCount: number;
+  boilerplateCount: number;
+  summaryText: string;
+} {
+  if (!commits || commits.length === 0) {
+    return {
+      codeCount: 0,
+      cosmeticCount: 0,
+      boilerplateCount: 0,
+      summaryText: '0 code related commits',
+    };
+  }
+
+  const codeExts = [
+    '.ts', '.tsx', '.js', '.jsx', '.py', '.rs', '.go', '.c', '.cpp', '.h',
+    '.html', '.css', '.scss', '.sql', '.sh', '.kicad_pcb', '.kicad_sch',
+    '.sch', '.brd', '.step', '.cad', '.java', '.kt', '.swift', '.php',
+    '.rb', '.lua', '.dart', '.vue', '.svelte',
+  ];
+
+  const lockAndAssetExts = [
+    '.lock', '-lock.json', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico',
+    '.webp', '.mp3', '.mp4', '.wav', '.pdf', '.woff', '.woff2', '.ttf',
+  ];
+
+  let codeCount = 0;
+  let cosmeticCount = 0;
+  let boilerplateCount = 0;
+
+  for (const c of commits) {
+    const files = c.files || [];
+    if (files.length > 0) {
+      let commitCodeAdditions = 0;
+      files.forEach((f) => {
+        const lower = f.filename.toLowerCase();
+        const isCode = codeExts.some((ext) => lower.endsWith(ext));
+        const isLockOrAsset = lockAndAssetExts.some((ext) => lower.includes(ext));
+        if (isCode && !isLockOrAsset) {
+          commitCodeAdditions += f.additions || 0;
+        }
+      });
+
+      const onlyDocOrAssetFiles = files.every((f) => {
+        const lower = f.filename.toLowerCase();
+        return (
+          lower.endsWith('.md') ||
+          lower.endsWith('.txt') ||
+          lower.includes('license') ||
+          lockAndAssetExts.some((ext) => lower.includes(ext)) ||
+          lower === '.gitignore'
+        );
+      });
+
+      const additions = c.additions || 0;
+      if (onlyDocOrAssetFiles) {
+        cosmeticCount++;
+      } else if (additions >= 1000 && commitCodeAdditions < 200) {
+        boilerplateCount++;
+      } else {
+        codeCount++;
+      }
+    } else {
+      // Fallback: analyze commit message
+      const msg = (c.message || '').toLowerCase();
+      const isCosmeticMsg =
+        msg.startsWith('docs') ||
+        msg.startsWith('chore') ||
+        msg.startsWith('style') ||
+        msg.includes('readme') ||
+        msg.includes('.gitignore') ||
+        msg.includes('license') ||
+        msg.includes('asset') ||
+        msg.includes('typo') ||
+        msg.includes('cleanup');
+      if (isCosmeticMsg) {
+        cosmeticCount++;
+      } else {
+        codeCount++;
+      }
+    }
+  }
+
+  return {
+    codeCount,
+    cosmeticCount,
+    boilerplateCount,
+    summaryText: formatCommitsSummary(codeCount, cosmeticCount, boilerplateCount),
+  };
+}

@@ -13,10 +13,11 @@ import {
   Copy,
   Check,
   ShieldAlert,
+  X,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { CockpitProject, GitHubRepoData } from '../../lib/types';
-import { PassFailControl } from '../common/PassFailControl';
+import { MultiOptionSelector, SelectorOption } from '../common/MultiOptionSelector';
 import { checkUrlFrameable } from '../../lib/api';
 
 interface PlayableDemoStageProps {
@@ -24,8 +25,8 @@ interface PlayableDemoStageProps {
   gitHubData?: Partial<GitHubRepoData>;
   onAdvance: () => void;
   onEarlyExit?: (reason: string) => void;
-  reviewChecklist?: Record<string, boolean>;
-  onToggleChecklist?: (key: string, status?: boolean) => void;
+  reviewChecklist?: Record<string, any>;
+  onToggleChecklist?: (key: string, status?: any) => void;
 }
 
 export const PlayableDemoStage: React.FC<PlayableDemoStageProps> = ({
@@ -54,18 +55,34 @@ export const PlayableDemoStage: React.FC<PlayableDemoStageProps> = ({
   const isStreamlit = playableUrl.includes('streamlit.app');
   const isReplit = playableUrl.includes('replit.com') || playableUrl.includes('replit.dev');
   const isGoogleDrive = playableUrl.includes('drive.google.com');
+  const isDropbox = playableUrl.includes('dropbox.com');
+  const isOneDrive = playableUrl.includes('onedrive.live.com') || playableUrl.includes('1drv.ms');
+  const isLocalhost =
+    playableUrl.includes('localhost') ||
+    playableUrl.includes('127.0.0.1') ||
+    playableUrl.includes('0.0.0.0');
+  const isGlitch = playableUrl.includes('glitch.me');
+
   const isDuplicateCodeAndDemo =
     playableUrl.length > 0 &&
     codeUrl.length > 0 &&
     playableUrl.toLowerCase() === codeUrl.toLowerCase();
 
-  const isProhibitedHost = isStreamlit || isReplit || isGoogleDrive;
+  const isProhibitedHost =
+    isStreamlit || isReplit || isGoogleDrive || isDropbox || isOneDrive || isLocalhost || isGlitch;
+
   const prohibitedReason = isStreamlit
     ? 'Streamlit.app apps sleep upon inactivity. GitBook rules require persistent hosting or video demo.'
     : isReplit
     ? 'Replit apps shut down upon inactivity. GitBook rules require persistent hosting or video demo.'
     : isGoogleDrive
     ? 'Google Drive is disallowed for video demos. Use YouTube, Vimeo, or direct web video.'
+    : isDropbox || isOneDrive
+    ? 'Cloud storage file shares are disallowed for demos. Use YouTube, direct web video, or web hosting.'
+    : isLocalhost
+    ? 'Localhost / 127.0.0.1 cannot be accessed externally. Provide a hosted live demo or video.'
+    : isGlitch
+    ? 'Glitch free tier apps sleep upon inactivity. GitBook rules require persistent hosting or video demo.'
     : undefined;
 
   const isGitHubUrl = playableUrl.includes('github.com');
@@ -133,14 +150,6 @@ export const PlayableDemoStage: React.FC<PlayableDemoStageProps> = ({
     return match ? `https://www.youtube-nocookie.com/embed/${match[1]}` : url;
   };
 
-  const handlePass = (key: string) => {
-    onToggleChecklist?.(key, true);
-  };
-
-  const handleFail = (key: string) => {
-    onToggleChecklist?.(key, false);
-  };
-
   const copyUrl = (url: string) => {
     navigator.clipboard.writeText(url);
     setCopiedLink(url);
@@ -148,13 +157,71 @@ export const PlayableDemoStage: React.FC<PlayableDemoStageProps> = ({
     setTimeout(() => setCopiedLink(null), 2000);
   };
 
-  // SINGLE CHECKBOX: Playable URL includes host compliance automatically!
-  // If host compliance fails (isProhibitedHost), autoPass is FALSE (FAIL).
-  const isPlayableAutoPassed = Boolean(playableUrl && !isDuplicateCodeAndDemo && !isProhibitedHost);
-  const isPlayableExplicitPassed = reviewChecklist['shipped_playable_valid'] === true;
-  const isPlayableExplicitFailed = reviewChecklist['shipped_playable_valid'] === false;
-  const isPlayablePassed =
-    isPlayableExplicitPassed || (isPlayableExplicitFailed ? false : isPlayableAutoPassed);
+  type PlayableDemoStatus = 'pass' | 'needs_video' | 'disallowed_host' | 'broken' | 'fail';
+
+  const PLAYABLE_OPTIONS: SelectorOption<PlayableDemoStatus>[] = [
+    {
+      id: 'pass',
+      label: 'Pass (Live)',
+      color: 'emerald',
+      icon: Check,
+      description: 'Working live web application or compiled release binary',
+    },
+    {
+      id: 'needs_video',
+      label: 'Needs Video Proof',
+      color: 'amber',
+      icon: AlertTriangle,
+      description: 'CLI tool, hardware, or complex app requiring video demonstration',
+    },
+    {
+      id: 'disallowed_host',
+      label: 'Disallowed Host',
+      color: 'rose',
+      icon: ShieldAlert,
+      description: 'Prohibited ephemeral host: Streamlit, Replit, or Google Drive',
+    },
+    {
+      id: 'broken',
+      label: 'Broken',
+      color: 'rose',
+      icon: AlertCircle,
+      description: '404 error, crashing, white screen, or broken functionality',
+    },
+    {
+      id: 'fail',
+      label: 'Fail',
+      color: 'rose',
+      icon: X,
+      description: 'Missing deliverable link or totally non-functional',
+    },
+  ];
+
+  // No auto-selection by default: reviewer must explicitly select status
+  const currentPlayableStatus: PlayableDemoStatus | undefined =
+    reviewChecklist['shipped_playable_status'] ||
+    (reviewChecklist['shipped_playable_valid'] === true
+      ? 'pass'
+      : reviewChecklist['shipped_playable_valid'] === false
+      ? 'fail'
+      : undefined);
+
+  const handlePlayableStatusChange = (val: PlayableDemoStatus) => {
+    onToggleChecklist?.('shipped_playable_status', val);
+    if (val === 'pass' || val === 'needs_video') {
+      onToggleChecklist?.('shipped_playable_valid', true);
+      onToggleChecklist?.('shipped_host_compliant', true);
+    } else if (val === 'disallowed_host') {
+      onToggleChecklist?.('shipped_playable_valid', false);
+      onToggleChecklist?.('shipped_host_compliant', false);
+    } else if (val === 'broken') {
+      onToggleChecklist?.('shipped_playable_valid', false);
+      // Do not mark host compliance as failed when it is just broken
+    } else if (val === 'fail') {
+      onToggleChecklist?.('shipped_playable_valid', false);
+      // Do not mark host compliance as failed when it is just failed
+    }
+  };
 
   return (
     <div className="h-full overflow-y-auto p-8 space-y-6 max-w-6xl mx-auto flex flex-col select-text">
@@ -163,7 +230,7 @@ export const PlayableDemoStage: React.FC<PlayableDemoStageProps> = ({
         <div>
           <div className="flex items-center gap-2">
             <span className="text-xs font-mono font-bold uppercase tracking-wider text-brand-orange bg-brand-orange/10 px-2 py-0.5 rounded border border-brand-orange/20">
-              Stage 3 of 6
+              Stage 3 of 7
             </span>
             <span className="text-xs text-content-tertiary">Playable Demo & Testing</span>
           </div>
@@ -181,12 +248,19 @@ export const PlayableDemoStage: React.FC<PlayableDemoStageProps> = ({
               href={playableUrl}
               target="_blank"
               rel="noreferrer"
-              className="px-4 py-2 rounded-xl bg-brand-orange hover:bg-orange-600 text-white text-xs font-bold flex items-center gap-2 transition-all shadow-md cursor-pointer"
+              className="px-3.5 py-2 rounded-xl bg-canvas-card border border-border-subtle hover:bg-canvas-hover text-content-primary text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
             >
-              <span>Open Playable Demo in New Tab</span>
+              <span>Open Demo in New Tab</span>
               <ExternalLink className="w-3.5 h-3.5" />
             </a>
           )}
+          <button
+            type="button"
+            onClick={onAdvance}
+            className="px-4 py-2 rounded-xl bg-brand-orange hover:bg-orange-600 text-white text-xs font-bold flex items-center gap-1.5 transition-all shadow-md cursor-pointer"
+          >
+            <span>Next: Telemetry & Introspect →</span>
+          </button>
         </div>
       </div>
 
@@ -219,15 +293,33 @@ export const PlayableDemoStage: React.FC<PlayableDemoStageProps> = ({
                   {idx === 0 && (
                     <span
                       className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase ${
-                        isPlayablePassed
+                        currentPlayableStatus === 'pass'
                           ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                          : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                          : currentPlayableStatus === 'needs_video'
+                          ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                          : currentPlayableStatus === 'broken'
+                          ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                          : currentPlayableStatus === 'disallowed_host'
+                          ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                          : currentPlayableStatus === 'fail'
+                          ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                          : 'bg-zinc-800 text-zinc-400 border border-zinc-700'
                       }`}
                     >
-                      {isPlayablePassed ? 'PASS' : 'FAIL'}
+                      {currentPlayableStatus === 'pass'
+                        ? 'PASS'
+                        : currentPlayableStatus === 'needs_video'
+                        ? 'NEEDS VIDEO'
+                        : currentPlayableStatus === 'broken'
+                        ? 'BROKEN'
+                        : currentPlayableStatus === 'disallowed_host'
+                        ? 'DISALLOWED HOST'
+                        : currentPlayableStatus === 'fail'
+                        ? 'FAIL'
+                        : 'PENDING'}
                     </span>
                   )}
-                  {isProhibitedHost && (
+                  {isProhibitedHost && currentPlayableStatus !== 'disallowed_host' && (
                     <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase bg-rose-500/20 text-rose-300 border border-rose-500/30">
                       Disallowed Host
                     </span>
@@ -259,28 +351,22 @@ export const PlayableDemoStage: React.FC<PlayableDemoStageProps> = ({
                   </button>
                 </div>
 
-                {/* Automated Host Failure Notice */}
+                {/* Automated Host Policy Notice */}
                 {isProhibitedHost && (
                   <p className="text-xs text-rose-300 pt-1 leading-relaxed">
-                    ⚠️ <strong>Host Policy Violation:</strong> {prohibitedReason} Automatically marked as FAIL.
+                    ⚠️ <strong>Host Policy Violation:</strong> {prohibitedReason}
                   </p>
                 )}
               </div>
 
               {idx === 0 && (
                 <div className="flex items-center gap-3 shrink-0">
-                  <span className="text-[11px] text-[#71717a] font-mono">Verdict</span>
-                  <PassFailControl
-                    label="Playable URL"
-                    status={
-                      isPlayableExplicitPassed
-                        ? true
-                        : isPlayableExplicitFailed
-                        ? false
-                        : undefined
-                    }
-                    onPass={() => handlePass('shipped_playable_valid')}
-                    onFail={() => handleFail('shipped_playable_valid')}
+                  <span className="text-[11px] text-[#71717a] font-mono">Playable Verdict</span>
+                  <MultiOptionSelector<PlayableDemoStatus>
+                    value={currentPlayableStatus}
+                    onChange={handlePlayableStatusChange}
+                    options={PLAYABLE_OPTIONS}
+                    size="xs"
                   />
                 </div>
               )}
@@ -290,11 +376,25 @@ export const PlayableDemoStage: React.FC<PlayableDemoStageProps> = ({
           {allDemos.length === 0 && (
             <div className="p-4 rounded-xl bg-rose-950/40 border border-rose-500/40 text-rose-300 text-xs flex items-center justify-between">
               <span className="font-semibold">No playable demo link submitted.</span>
-              <PassFailControl
-                label="Playable URL"
-                status={false}
-                onPass={() => handlePass('shipped_playable_valid')}
-                onFail={() => handleFail('shipped_playable_valid')}
+              <MultiOptionSelector<PlayableDemoStatus>
+                value={currentPlayableStatus}
+                onChange={handlePlayableStatusChange}
+                options={PLAYABLE_OPTIONS}
+                size="xs"
+              />
+            </div>
+          )}
+
+          {/* Optional Custom Reason Input for Playable Demo */}
+          {currentPlayableStatus && (
+            <div className="p-3 bg-[#18181b] border border-[#27272a] rounded-xl flex items-center gap-2">
+              <span className="text-[11px] font-mono text-[#a1a1aa] shrink-0">Reason / Note:</span>
+              <input
+                type="text"
+                value={reviewChecklist['note_shipped_playable'] || ''}
+                onChange={(e) => onToggleChecklist?.('note_shipped_playable', e.target.value)}
+                placeholder="Optional specific reason (e.g. 404 page not found, white screen of death, requires login...)"
+                className="flex-1 bg-[#121214] border border-[#27272a] rounded-lg px-2.5 py-1 text-xs text-white placeholder-[#71717a] focus:outline-none focus:border-brand-orange"
               />
             </div>
           )}
@@ -595,19 +695,26 @@ export const PlayableDemoStage: React.FC<PlayableDemoStageProps> = ({
       {/* Footer Navigation Bar */}
       <div className="pt-4 border-t border-border-subtle flex items-center justify-between shrink-0">
         <div className="flex items-center gap-3 text-xs">
-          {isPlayablePassed ? (
+          {currentPlayableStatus === 'pass' || currentPlayableStatus === 'needs_video' ? (
             <span className="text-emerald-400 font-semibold flex items-center gap-1.5">
               <CheckCircle2 className="w-4 h-4" />
               <span>Playable Demo Verified</span>
             </span>
-          ) : (
+          ) : currentPlayableStatus ? (
             <span className="text-rose-400 font-semibold flex items-center gap-1.5">
               <AlertTriangle className="w-4 h-4" />
               <span>
-                {isProhibitedHost
+                {currentPlayableStatus === 'disallowed_host'
                   ? 'Playable demo failed due to prohibited ephemeral host'
-                  : 'Playable demo requires verification or is broken'}
+                  : currentPlayableStatus === 'broken'
+                  ? 'Playable demo marked as broken'
+                  : 'Playable demo failed / missing'}
               </span>
+            </span>
+          ) : (
+            <span className="text-zinc-400 font-semibold flex items-center gap-1.5">
+              <AlertCircle className="w-4 h-4 text-zinc-500" />
+              <span>Playable Demo Pending Verification</span>
             </span>
           )}
         </div>

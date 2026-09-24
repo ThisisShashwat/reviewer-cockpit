@@ -43,11 +43,19 @@ function extractAllUrls(val: any): string[] {
  * Derives a human-friendly project name from codeUrl or description
  */
 function deriveProjectName(raw: any, codeUrl: string, description: string): string {
-  if (raw.projectName && typeof raw.projectName === "string" && raw.projectName.trim()) {
-    return decodeHtml(raw.projectName.trim());
-  }
-  if (raw["Project Name"] && typeof raw["Project Name"] === "string" && raw["Project Name"].trim()) {
-    return decodeHtml(raw["Project Name"].trim());
+  const fields = raw.fields || {};
+  const explicitName =
+    raw.projectName ||
+    raw.project_name ||
+    raw.projectname ||
+    raw["Project Name"] ||
+    fields.projectName ||
+    fields.project_name ||
+    fields.projectname ||
+    fields["Project Name"];
+
+  if (explicitName && typeof explicitName === "string" && explicitName.trim()) {
+    return decodeHtml(explicitName.trim());
   }
 
   // Try extracting repo name from GitHub URL
@@ -109,8 +117,26 @@ export function normalizeLiveSubmission(
 
   // Resolve values across fields dictionary or flattened properties
   const id = String(raw.id || fields.id || "").trim();
-  const rawCodeVal = raw.codeUrl || fields["Code URL"] || fields.codeUrl || "";
-  const rawPlayableVal = raw.playableUrl || fields["Playable URL"] || fields.playableUrl || "";
+  const rawCodeVal =
+    raw.codeUrl ||
+    (raw as any).code_url ||
+    (raw as any).codeurl ||
+    (raw as any)["Code URL"] ||
+    fields["Code URL"] ||
+    fields.codeUrl ||
+    (fields as any).code_url ||
+    (fields as any).codeurl ||
+    "";
+  const rawPlayableVal =
+    raw.playableUrl ||
+    (raw as any).playable_url ||
+    (raw as any).playableurl ||
+    (raw as any)["Playable URL"] ||
+    fields["Playable URL"] ||
+    fields.playableUrl ||
+    (fields as any).playable_url ||
+    (fields as any).playableurl ||
+    "";
 
   const allCodeUrls = extractAllUrls(rawCodeVal);
   const allPlayableUrls = extractAllUrls(rawPlayableVal);
@@ -120,6 +146,7 @@ export function normalizeLiveSubmission(
 
   const archiveUrl = String(
     raw.archiveUrl ||
+      (raw as any).archive_url ||
       fields["Archive URL"] ||
       fields["Archive Link"] ||
       fields["Archive"] ||
@@ -128,35 +155,78 @@ export function normalizeLiveSubmission(
   ).trim() || undefined;
 
   const rawDescription = String(
-    raw.description || fields["Description"] || fields.description || ""
+    raw.description ||
+      (raw as any).desc ||
+      fields["Description"] ||
+      fields.description ||
+      (fields as any).desc ||
+      ""
   ).trim();
   const description = decodeHtml(rawDescription);
 
   const githubUsername = String(
-    raw.githubUsername || fields["GitHub Username"] || fields.githubUsername || ""
+    raw.githubUsername ||
+      (raw as any).github_username ||
+      (raw as any).githubusername ||
+      (raw as any).githubusrname ||
+      (raw as any).github ||
+      fields["GitHub Username"] ||
+      fields.githubUsername ||
+      (fields as any).github_username ||
+      (fields as any).githubusername ||
+      (fields as any).githubusrname ||
+      ""
   ).trim();
   const screenshotUrl = extractScreenshotUrl(
-    raw.screenshotUrl ?? raw.screenshot ?? fields["Screenshot"] ?? fields.screenshot
+    raw.screenshotUrl ??
+      (raw as any).screenshot_url ??
+      raw.screenshot ??
+      (raw as any).image ??
+      fields["Screenshot"] ??
+      fields.screenshot ??
+      (fields as any).screenshotUrl ??
+      (fields as any).screenshot_url
   );
 
-  const overrideHours = Number(
-    raw.overrideHours ?? fields["Optional - Override Hours Spent"] ?? fields.overrideHours ?? 0
-  );
-  const submittedHours = Number.isFinite(overrideHours) && overrideHours >= 0 ? overrideHours : 0;
+  const hoursCandidate =
+    (raw as any).submittedHours ??
+    (raw as any).submitted_hours ??
+    (raw as any).submittedhours ??
+    raw.overrideHours ??
+    (raw as any).override_hours ??
+    (raw as any).hours ??
+    fields["Optional - Override Hours Spent"] ??
+    fields.overrideHours ??
+    (fields as any).submittedHours ??
+    (fields as any).submitted_hours ??
+    (fields as any).hours ??
+    0;
+  const parsedHours = Number(hoursCandidate);
+  const submittedHours = Number.isFinite(parsedHours) && parsedHours >= 0 ? parsedHours : 0;
   
   const overrideHoursJustification = decodeHtml(String(
     raw.overrideHoursJustification ||
+      (raw as any).override_hours_justification ||
+      (raw as any).hoursJustification ||
       fields["Optional - Override Hours Spent Justification"] ||
       fields.overrideHoursJustification ||
       ""
   ).trim()) || undefined;
 
   const hackatimeId = String(
-    raw.hackatimeId || fields["Justification - Submitter Hackatime ID"] || fields.hackatimeId || ""
+    raw.hackatimeId ||
+      (raw as any).hackatime_id ||
+      (raw as any).hackatimeid ||
+      fields["Justification - Submitter Hackatime ID"] ||
+      fields.hackatimeId ||
+      (fields as any).hackatime_id ||
+      (fields as any).hackatimeid ||
+      ""
   ).trim() || undefined;
 
   const hackatimeProjects = decodeHtml(String(
     raw.hackatimeProjects ||
+      (raw as any).hackatime_projects ||
       fields["Justification - Hackatime Project Name(s) + Date Range(s)"] ||
       fields.hackatimeProjects ||
       ""
@@ -212,19 +282,34 @@ export function normalizeLiveSubmission(
   );
 
   const projectName = deriveProjectName(raw, codeUrl, description);
-  const projectType: ProjectType =
+  const rawType =
     raw.projectType ||
-    (fields["Project Type"]?.toLowerCase() === "hardware" ? "hardware" : "software");
+    (raw as any).project_type ||
+    (raw as any).type ||
+    fields["Project Type"] ||
+    fields.projectType ||
+    (fields as any).project_type ||
+    (fields as any).type ||
+    "software";
+  const projectType: ProjectType =
+    String(rawType).toLowerCase().trim() === "hardware" ? "hardware" : "software";
 
   // Determine cockpitStatus
   let cockpitStatus: CockpitStatus = existing?.cockpitStatus || "pending";
   if (!existing) {
-    if (liveApproved || liveReviewerVerdict === "Approve") {
-      cockpitStatus = "pre_approved";
-    } else if (liveReviewStatus === "Rejected" || liveReviewerVerdict === "Reject") {
+    const rawQueue = String((raw as any).queue || (raw as any).status || "").toLowerCase().trim();
+    if (rawQueue === "approved" || liveApproved || liveReviewerVerdict === "Approve") {
+      cockpitStatus = "approved";
+    } else if (rawQueue === "rejected" || liveReviewStatus === "Rejected" || liveReviewerVerdict === "Reject") {
       cockpitStatus = "rejected";
-    } else if (liveReviewStatus === "Fraud") {
+    } else if (rawQueue === "fraud" || liveReviewStatus === "Fraud") {
       cockpitStatus = "flagged_fraud";
+    } else if (rawQueue === "pre_approved") {
+      cockpitStatus = "pre_approved";
+    } else if (rawQueue === "completed_pre_approved") {
+      cockpitStatus = "completed_pre_approved";
+    } else {
+      cockpitStatus = "pending";
     }
   }
 

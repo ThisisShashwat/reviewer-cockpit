@@ -12,6 +12,7 @@ import {
 import { toast } from 'sonner';
 import { submitCockpitVerdict } from '../lib/api';
 import { CockpitProject, VerdictDetails } from '../lib/types';
+import { formatCommitsSummary } from '../lib/utils';
 
 interface RightSidebarProps {
   project: CockpitProject;
@@ -130,6 +131,13 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
         });
       }
 
+      if (res.backupInfo?.created) {
+        toast.success(`🛡️ Milestone reached (${res.backupInfo.milestone} prereviews completed)!`, {
+          description: `Permanent backup saved: ${res.backupInfo.filename}`,
+          duration: 6000,
+        });
+      }
+
       onVerdictSubmitted(res.verdict, res.project);
       setTimeout(() => onNextProject(), 400);
     } catch (err: any) {
@@ -140,20 +148,59 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
   };
 
   const handleCopyClipboard = () => {
-    const lines = [
-      `[COCKPIT ${action.toUpperCase()}] Recommended Hours: ${action === 'pre_approve' ? approvedHours : 0}h`,
-      deflatedHours > 0 ? `(Deflated by ${deflatedHours}h from requested ${project.submittedHours}h)` : '',
-      `• Project: ${project.projectName}`,
-      `• Submitter: @${project.githubUsername}`,
-      `• Code: ${project.codeUrl}`,
-      `• Demo: ${project.playableUrl}`,
-      '',
-      'Justification:',
-      justificationText,
-      publicFeedback ? `\nFeedback:\n${publicFeedback}` : '',
-    ].filter(Boolean).join('\n');
+    const isDeflated = action === 'pre_approve' && (approvedHours < project.submittedHours || deflatedHours > 0);
+    const verdictText = action === 'pre_approve'
+      ? (isDeflated ? `Accepted (deflated from ${project.submittedHours} hrs to ${approvedHours} hrs)` : 'Accepted')
+      : action === 'flag_fraud'
+      ? 'Rejected (Fraud)'
+      : 'Rejected';
 
-    navigator.clipboard.writeText(lines);
+    const applied = project.cockpitVerdict?.appliedChecklist || {};
+    const expMap: Record<string, string> = {
+      beginner: 'Beginner',
+      intermediate: 'Intermediate',
+      advanced: 'Advanced',
+      highly_experienced: 'Highly Experienced / Pro',
+    };
+    const expText = applied.submitter_experience_level
+      ? (expMap[applied.submitter_experience_level] || applied.submitter_experience_level)
+      : 'Uncalibrated';
+
+    const lines: string[] = [
+      `Project: ${project.projectName || 'Unnamed'}`,
+      `Hackatime ID: ${project.hackatimeId || project.id || 'N/A'}`,
+      `Experience: ${expText}`,
+      `Shipped: Yes`,
+    ];
+
+    let commitsSummary = applied.commits_summary;
+    if (applied.code_commits_count !== undefined || applied.cosmetic_commits_count !== undefined) {
+      commitsSummary = formatCommitsSummary(
+        applied.code_commits_count || 0,
+        applied.cosmetic_commits_count || 0,
+        applied.boilerplate_commits_count || 0
+      );
+    } else if (!commitsSummary) {
+      commitsSummary = '0 code related commits';
+    } else {
+      commitsSummary = commitsSummary
+        .replace(/,\s*0 cosmetic commits?/gi, '')
+        .replace(/,\s*1 cosmetic commits?/gi, '')
+        .replace(/,\s*2 cosmetic commits?/gi, '')
+        .replace(/,\s*0 boilerplate commits?/gi, '')
+        .replace(/,\s*1 boilerplate commits?/gi, '')
+        .replace(/,\s*2 boilerplate commits?/gi, '');
+    }
+    lines.push(`Commits: ${commitsSummary}`);
+
+    lines.push(`Verdict: ${verdictText}`);
+
+    if (justificationText.trim()) {
+      lines.push('');
+      lines.push(justificationText.trim());
+    }
+
+    navigator.clipboard.writeText(lines.join('\n'));
     setCopied(true);
     toast.success('Formatted verdict copied to clipboard!');
     setTimeout(() => setCopied(false), 2000);

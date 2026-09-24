@@ -11,7 +11,7 @@ import {
   ShieldCheck,
   Lock,
   Unlock,
-  Key,
+  UserCheck,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -20,8 +20,6 @@ import {
   GitHubRepoData,
   VerdictDetails,
 } from '../../lib/types';
-import { getGitHubToken } from '../../lib/api';
-import { GitHubTokenModal } from '../common/GitHubTokenModal';
 
 import { ReviewSidebar } from '../layout/ReviewSidebar';
 import { ManifestDoubleDipStage } from '../stages/ManifestDoubleDipStage';
@@ -29,9 +27,10 @@ import { ReadmeDeliverablesStage } from '../stages/ReadmeDeliverablesStage';
 import { PlayableDemoStage } from '../stages/PlayableDemoStage';
 import { TelemetryIntrospectStage } from '../stages/TelemetryIntrospectStage';
 import { CommitsDiffsStage } from '../stages/CommitsDiffsStage';
+import { PortfolioExperienceStage } from '../stages/PortfolioExperienceStage';
 import { VerdictDeskStage } from '../stages/VerdictDeskStage';
 
-export type ReviewStep = 0 | 1 | 2 | 3 | 4 | 5;
+export type ReviewStep = 0 | 1 | 2 | 3 | 4 | 5 | 6;
 
 const STEPS = [
   { id: 0 as ReviewStep, label: '1. History', title: 'Prior Ships & Double-Dip', icon: Layers },
@@ -39,7 +38,8 @@ const STEPS = [
   { id: 2 as ReviewStep, label: '3. Playable Demo', title: 'Playable Testing & Host Stability', icon: Globe },
   { id: 3 as ReviewStep, label: '4. Telemetry', title: 'Telemetry & Coding Timeline', icon: Activity },
   { id: 4 as ReviewStep, label: '5. Commits & AI', title: 'Git History, Churn & AI Forensics', icon: GitCommit },
-  { id: 5 as ReviewStep, label: '6. Verdict', title: 'Final Verdict Desk', icon: ShieldCheck },
+  { id: 5 as ReviewStep, label: '6. Portfolio', title: 'Experience & Other Repos', icon: UserCheck },
+  { id: 6 as ReviewStep, label: '7. Verdict', title: 'Final Verdict Desk', icon: ShieldCheck },
 ];
 
 interface ReviewPageProps {
@@ -57,6 +57,7 @@ interface ReviewPageProps {
   auditHistory: AuditLogEntry[];
   onNoteAdded: (entry: AuditLogEntry) => void;
   onVerdictSubmitted: (verdict: VerdictDetails, updatedProject: CockpitProject) => void;
+  onCompletePreApproval?: (project: CockpitProject) => void;
   initialStep?: ReviewStep;
   onStepChange?: (step: ReviewStep) => void;
 }
@@ -76,18 +77,22 @@ export const ReviewPage: React.FC<ReviewPageProps> = ({
   auditHistory,
   onNoteAdded,
   onVerdictSubmitted,
+  onCompletePreApproval,
   initialStep,
   onStepChange,
 }) => {
-  const [currentStep, setCurrentStep] = useState<ReviewStep>(initialStep ?? 0);
-  const [reviewChecklist, setReviewChecklist] = useState<Record<string, boolean>>({});
+  const isReadOnly = project.cockpitStatus !== 'pending';
+  const defaultInitialStep: ReviewStep = isReadOnly ? 6 : 0;
+  const [currentStep, setCurrentStep] = useState<ReviewStep>(initialStep ?? defaultInitialStep);
+  const [reviewChecklist, setReviewChecklist] = useState<Record<string, any>>({});
   const [baselineArchiveCommit, setBaselineArchiveCommit] = useState<{
     commitHash: string;
     shortHash: string;
     shipName: string;
     archiveUrl: string;
+    program?: string;
+    hours?: number;
   } | undefined>(undefined);
-  const [isTokenModalOpen, setIsTokenModalOpen] = useState(false);
 
   // Sync step changes upward
   const handleStepSelect = (step: ReviewStep) => {
@@ -108,7 +113,8 @@ export const ReviewPage: React.FC<ReviewPageProps> = ({
     }
   }, [initialStep]);
 
-  const toggleChecklist = (key: string, status?: boolean) => {
+  const toggleChecklist = (key: string, status?: any) => {
+    if (isReadOnly) return;
     setReviewChecklist((prev) => {
       if (status !== undefined) {
         if (prev[key] === status) {
@@ -138,7 +144,7 @@ export const ReviewPage: React.FC<ReviewPageProps> = ({
         onPrevProject();
       } else {
         const num = parseInt(e.key, 10);
-        if (num >= 1 && num <= 6) {
+        if (num >= 1 && num <= 7) {
           handleStepSelect((num - 1) as ReviewStep);
         }
       }
@@ -149,7 +155,7 @@ export const ReviewPage: React.FC<ReviewPageProps> = ({
   }, [onBackToQueue, onNextProject, onPrevProject]);
 
   const handleAdvance = () => {
-    if (currentStep < 5) {
+    if (currentStep < 6) {
       const next = (currentStep + 1) as ReviewStep;
       handleStepSelect(next);
     }
@@ -157,7 +163,7 @@ export const ReviewPage: React.FC<ReviewPageProps> = ({
 
   const handleEarlyExit = (reason: string) => {
     toast.info(`Flag noted: ${reason}. Advanced to Final Verdict Desk.`);
-    handleStepSelect(5);
+    handleStepSelect(6);
   };
 
   return (
@@ -230,18 +236,8 @@ export const ReviewPage: React.FC<ReviewPageProps> = ({
           })}
         </div>
 
-        {/* Right: GitHub Token / Rate Limit & Stepping Controls */}
+        {/* Right: Stepping Controls */}
         <div className="flex items-center gap-1.5">
-          <button
-            type="button"
-            onClick={() => setIsTokenModalOpen(true)}
-            className="px-2.5 py-1.5 rounded-lg text-[11px] font-mono flex items-center gap-1.5 border border-border-subtle bg-canvas-card hover:bg-canvas-hover text-content-secondary hover:text-content-primary transition-colors cursor-pointer shadow-xs mr-1"
-            title="GitHub API Token & Rate Limits (Avoid 60/hr limit)"
-          >
-            <Key className="w-3.5 h-3.5 text-[#ff6b35]" />
-            <span>{getGitHubToken() ? 'GH: 5k/hr' : 'GH Token'}</span>
-          </button>
-
           <button
             type="button"
             onClick={onPrevProject}
@@ -317,6 +313,7 @@ export const ReviewPage: React.FC<ReviewPageProps> = ({
           {currentStep === 3 && (
             <TelemetryIntrospectStage
               project={project}
+              gitHubData={gitHubData}
               onAdvance={handleAdvance}
               onEarlyExit={handleEarlyExit}
               reviewChecklist={reviewChecklist}
@@ -337,20 +334,30 @@ export const ReviewPage: React.FC<ReviewPageProps> = ({
           )}
 
           {currentStep === 5 && (
+            <PortfolioExperienceStage
+              project={project}
+              gitHubData={gitHubData}
+              onAdvance={handleAdvance}
+              onEarlyExit={handleEarlyExit}
+              reviewChecklist={reviewChecklist}
+              onToggleChecklist={toggleChecklist}
+            />
+          )}
+
+          {currentStep === 6 && (
             <VerdictDeskStage
               project={project}
               verdict={verdict}
+              gitHubData={gitHubData}
               reviewChecklist={reviewChecklist}
+              onToggleChecklist={toggleChecklist}
               onVerdictSubmitted={onVerdictSubmitted}
+              onCompletePreApproval={onCompletePreApproval}
+              isReadOnly={isReadOnly}
             />
           )}
         </main>
       </div>
-
-      <GitHubTokenModal
-        isOpen={isTokenModalOpen}
-        onClose={() => setIsTokenModalOpen(false)}
-      />
     </div>
   );
 };

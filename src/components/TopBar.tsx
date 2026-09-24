@@ -4,7 +4,6 @@ import {
   ChevronRight,
   Database,
   RefreshCw,
-  ShieldCheck,
   Flame,
   CheckCircle2,
   Clock,
@@ -26,7 +25,6 @@ interface TopBarProps {
   onNext: () => void;
   serverOnline: boolean;
   onOpenSync: () => void;
-  onOpenAdminDesk: () => void;
   onRefresh: () => void;
   isRefreshing: boolean;
 }
@@ -44,7 +42,6 @@ export const TopBar: React.FC<TopBarProps> = ({
   onNext,
   serverOnline,
   onOpenSync,
-  onOpenAdminDesk,
   onRefresh,
   isRefreshing,
 }) => {
@@ -225,21 +222,6 @@ export const TopBar: React.FC<TopBarProps> = ({
         >
           <Database className="w-3.5 h-3.5 text-rv-accent" />
           <span>Sync Live Dump</span>
-        </button>
-
-        {/* Admin Desk Modal Button */}
-        <button
-          type="button"
-          onClick={onOpenAdminDesk}
-          className="px-3 py-1.5 rounded-lg bg-emerald-600/20 border border-emerald-500/40 text-xs font-semibold text-emerald-400 hover:bg-emerald-600/30 flex items-center gap-1.5 transition-colors shadow-sm"
-        >
-          <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-          <span>Admin Clipboard Desk</span>
-          {stats && stats.preApproved > 0 && (
-            <span className="ml-0.5 px-1.5 py-0.2 rounded-full bg-emerald-500 text-black text-[10px] font-bold">
-              {stats.preApproved}
-            </span>
-          )}
         </button>
       </div>
     </header>

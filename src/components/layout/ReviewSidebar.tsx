@@ -1,54 +1,78 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   ExternalLink,
   MessageSquare,
-  Send,
   FileCode,
   Copy,
   Check,
   ChevronDown,
   ChevronUp,
-  Bot,
+  PenTool,
+  UserCheck,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { saveProjectNote } from '../../lib/api';
-import { AuditLogEntry, CockpitProject } from '../../lib/types';
+import { fetchUserNotes, saveUserNote } from '../../lib/api';
+import { AuditLogEntry, CockpitProject, UserNote } from '../../lib/types';
 import { decodeHtmlEntities } from '../../lib/utils';
 
 interface ReviewSidebarProps {
   project: CockpitProject;
   auditHistory: AuditLogEntry[];
   onNoteAdded: (entry: AuditLogEntry) => void;
-  reviewChecklist: Record<string, boolean>;
-  onToggleChecklist?: (key: string, status?: boolean) => void;
+  reviewChecklist: Record<string, any>;
+  onToggleChecklist?: (key: string, status?: any) => void;
 }
 
 export const ReviewSidebar: React.FC<ReviewSidebarProps> = ({
   project,
   auditHistory,
-  onNoteAdded,
+  onNoteAdded: _onNoteAdded,
   reviewChecklist,
-  onToggleChecklist,
+  onToggleChecklist: _onToggleChecklist,
 }) => {
-  const [noteText, setNoteText] = useState('');
-  const [isSubmittingNote, setIsSubmittingNote] = useState(false);
+  const [scratchpadText, setScratchpadText] = useState('');
+  const [userNotes, setUserNotes] = useState<UserNote[]>([]);
+  const [newUserNoteText, setNewUserNoteText] = useState('');
+  const [isSubmittingUserNote, setIsSubmittingUserNote] = useState(false);
   const [copiedLink, setCopiedLink] = useState<'code' | 'demo' | null>(null);
   const [showMessages, setShowMessages] = useState(false);
 
-  const handleSaveNote = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!noteText.trim()) return;
+  // Clear scratchpad when switching to a different project
+  useEffect(() => {
+    setScratchpadText('');
+  }, [project.id]);
 
-    setIsSubmittingNote(true);
+  // Fetch persistent user notes for the submitter
+  useEffect(() => {
+    let mounted = true;
+    if (project.githubUsername) {
+      fetchUserNotes(project.githubUsername).then((notes) => {
+        if (mounted) setUserNotes(notes);
+      });
+    } else {
+      setUserNotes([]);
+    }
+    return () => {
+      mounted = false;
+    };
+  }, [project.githubUsername]);
+
+  const handleAddUserNote = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newUserNoteText.trim() || !project.githubUsername) return;
+
+    setIsSubmittingUserNote(true);
     try {
-      const res = await saveProjectNote(project.id, noteText.trim(), 'reviewer');
-      onNoteAdded(res.entry);
-      setNoteText('');
-      toast.success('Note saved to project audit log');
+      const note = await saveUserNote(project.githubUsername, newUserNoteText.trim(), 'Reviewer');
+      if (note) {
+        setUserNotes((prev) => [note, ...prev]);
+        setNewUserNoteText('');
+        toast.success(`Note saved for user @${project.githubUsername}`);
+      }
     } catch {
-      toast.error('Failed to save note');
+      toast.error('Failed to save user note');
     } finally {
-      setIsSubmittingNote(false);
+      setIsSubmittingUserNote(false);
     }
   };
 
@@ -59,8 +83,15 @@ export const ReviewSidebar: React.FC<ReviewSidebarProps> = ({
     setTimeout(() => setCopiedLink(null), 2000);
   };
 
-  const passedChecksCount = Object.values(reviewChecklist).filter((v) => v === true).length;
-  const failedChecksCount = Object.values(reviewChecklist).filter((v) => v === false).length;
+  const passedChecksCount = Object.entries(reviewChecklist).filter(([k, v]) => {
+    if (k.startsWith('flag_') || k.endsWith('_status')) return false;
+    if (k === 'submitter_experience_level') return !!v;
+    return v === true || v === 'pass' || v === 'ai_generated' || v === 'deflate';
+  }).length;
+  const failedChecksCount = Object.entries(reviewChecklist).filter(([k, v]) => {
+    if (k.startsWith('flag_') || k.endsWith('_status') || k === 'submitter_experience_level') return false;
+    return v === false || v === 'fail' || v === 'disallowed_host';
+  }).length;
   const messages = (project as any).messages || [];
 
   return (
@@ -96,27 +127,6 @@ export const ReviewSidebar: React.FC<ReviewSidebarProps> = ({
               {project.submittedHours} hrs
             </span>
           </div>
-        </div>
-
-        {/* Small Optional AI-Generated Flag Toggle */}
-        <div className="pt-2 border-t border-[#27272a]">
-          <button
-            type="button"
-            onClick={() => onToggleChecklist?.('flag_ai_generated')}
-            className={`w-full py-1.5 px-2.5 rounded-lg border text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-              reviewChecklist['flag_ai_generated']
-                ? 'bg-amber-950/60 border-amber-500/60 text-amber-300 shadow-sm ring-1 ring-amber-500/30'
-                : 'bg-[#18181b] border-[#27272a] text-[#a1a1aa] hover:text-white hover:border-[#3f3f46]'
-            }`}
-            title="Mark this project as AI-generated or containing massive prompt dumps"
-          >
-            <Bot className="w-3.5 h-3.5" />
-            <span>
-              {reviewChecklist['flag_ai_generated']
-                ? 'Flagged: AI-Generated Code ✓'
-                : 'Mark as AI-Generated'}
-            </span>
-          </button>
         </div>
 
         {/* Quick Links with Copy and Open (Supports up to 4+ Code, Demo, and Archive Links) */}
@@ -266,43 +276,98 @@ export const ReviewSidebar: React.FC<ReviewSidebarProps> = ({
       {/* Checklist Progress Indicator */}
       <div className="p-4 border-b border-border-subtle space-y-2">
         <div className="flex items-center justify-between text-xs font-semibold text-content-primary">
-          <span>Review Checklist</span>
+          <span>Review Progress</span>
           <div className="flex items-center gap-1.5 font-mono text-[11px]">
-            <span className="text-emerald-600 font-bold">{passedChecksCount} passed</span>
+            <span className="text-emerald-500 font-bold">{passedChecksCount} passed</span>
             {failedChecksCount > 0 && (
-              <span className="text-rose-600 font-bold">({failedChecksCount} flagged)</span>
+              <span className="text-rose-500 font-bold">({failedChecksCount} flagged)</span>
             )}
+            <span className="text-content-muted">/ {Math.max(10, passedChecksCount + failedChecksCount)}</span>
           </div>
         </div>
-        <div className="h-1.5 w-full bg-canvas-subtle rounded-full overflow-hidden">
+        <div className="h-2 w-full bg-[#27272a] rounded-full overflow-hidden flex">
           <div
-            className="h-full bg-brand-orange transition-all duration-300"
-            style={{ width: `${Math.min(100, (passedChecksCount / 12) * 100)}%` }}
+            className="h-full bg-emerald-500 transition-all duration-300"
+            style={{
+              width: `${(passedChecksCount / Math.max(10, passedChecksCount + failedChecksCount)) * 100}%`,
+            }}
+            title={`${passedChecksCount} passed`}
+          />
+          <div
+            className="h-full bg-rose-500 transition-all duration-300"
+            style={{
+              width: `${(failedChecksCount / Math.max(10, passedChecksCount + failedChecksCount)) * 100}%`,
+            }}
+            title={`${failedChecksCount} flagged`}
           />
         </div>
       </div>
 
-      {/* Permanent Inline Reviewer Notes Composer */}
+      {/* Reviewer Scratch Pad (Temporary, No Save Button) */}
       <div className="p-4 border-b border-border-subtle space-y-2">
         <label className="text-xs font-semibold text-content-primary flex items-center justify-between">
-          <span>Reviewer Notes</span>
-          <span className="text-[11px] font-normal text-content-muted">Appended to audit log</span>
+          <span className="flex items-center gap-1.5">
+            <PenTool className="w-3.5 h-3.5 text-brand-orange" />
+            <span>Reviewer Scratch Pad</span>
+          </span>
+          <span className="text-[10px] font-mono text-content-muted">Temporary (session only)</span>
         </label>
-        <form onSubmit={handleSaveNote} className="space-y-2">
-          <textarea
-            value={noteText}
-            onChange={(e) => setNoteText(e.target.value)}
-            placeholder="Type observations, code checks, or concerns here..."
-            rows={3}
-            className="w-full bg-canvas border border-border-subtle rounded-lg p-2.5 text-xs text-content-primary placeholder:text-content-muted focus:outline-none focus:border-brand-orange resize-none leading-relaxed"
+        <textarea
+          value={scratchpadText}
+          onChange={(e) => setScratchpadText(e.target.value)}
+          placeholder="Type notes, scratch code, or temporary observations here... (not saved)"
+          rows={3}
+          className="w-full bg-canvas border border-border-subtle rounded-lg p-2.5 text-xs text-content-primary placeholder:text-content-muted focus:outline-none focus:border-brand-orange resize-none leading-relaxed"
+        />
+      </div>
+
+      {/* Submitter Track Record Notes (Persistent per user @username) */}
+      <div className="p-4 border-b border-border-subtle space-y-2.5">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-semibold text-content-primary flex items-center gap-1.5">
+            <UserCheck className="w-3.5 h-3.5 text-brand-orange" />
+            <span>User Notes (@{project.githubUsername})</span>
+          </span>
+          <span className="text-[10px] font-mono text-content-muted">Across all ships</span>
+        </div>
+
+        {/* Existing notes for this submitter */}
+        {userNotes.length > 0 ? (
+          <div className="space-y-1.5 max-h-36 overflow-y-auto">
+            {userNotes.map((un) => (
+              <div
+                key={un.id}
+                className="p-2 rounded-lg bg-[#18181b] border border-[#27272a] text-xs space-y-0.5 text-white"
+              >
+                <div className="flex items-center justify-between text-[10px] text-[#a1a1aa] font-mono">
+                  <span>{un.author}</span>
+                  <span>{new Date(un.createdAt).toLocaleDateString()}</span>
+                </div>
+                <p className="text-[11px] text-[#d4d4d8] leading-snug">{un.text}</p>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-[11px] text-content-muted italic">
+            No previous reviewer notes recorded for this submitter.
+          </p>
+        )}
+
+        {/* Add user note form */}
+        <form onSubmit={handleAddUserNote} className="flex items-center gap-1.5 pt-1">
+          <input
+            type="text"
+            value={newUserNoteText}
+            onChange={(e) => setNewUserNoteText(e.target.value)}
+            placeholder="Add note for this user..."
+            className="flex-1 bg-canvas border border-border-subtle rounded-lg px-2.5 py-1.5 text-xs text-content-primary placeholder:text-content-muted focus:outline-none focus:border-brand-orange"
           />
           <button
             type="submit"
-            disabled={isSubmittingNote || !noteText.trim()}
-            className="w-full py-1.5 rounded-lg bg-canvas-subtle border border-border-subtle hover:bg-canvas-hover text-xs font-semibold text-content-primary flex items-center justify-center gap-1.5 transition-colors disabled:opacity-40 cursor-pointer"
+            disabled={isSubmittingUserNote || !newUserNoteText.trim()}
+            className="px-3 py-1.5 rounded-lg bg-brand-orange hover:bg-brand-orange/90 text-white text-xs font-semibold disabled:opacity-40 transition-colors shrink-0 cursor-pointer"
           >
-            <Send className="w-3 h-3 text-brand-orange" />
-            <span>Save Note</span>
+            Add
           </button>
         </form>
       </div>

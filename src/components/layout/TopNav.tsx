@@ -1,7 +1,6 @@
 import React from 'react';
 import {
   ListFilter,
-  ShieldCheck,
   RefreshCw,
   Upload,
 } from 'lucide-react';
@@ -77,24 +76,6 @@ export const TopNav: React.FC<TopNavProps> = ({
               <span>Reviewing: {activeProjectTitle}</span>
             </div>
           )}
-
-          <button
-            type="button"
-            onClick={() => onNavigate('admin')}
-            className={`px-3 py-1.5 rounded-md text-[13px] font-medium transition-colors flex items-center gap-1.5 ${
-              currentPage === 'admin'
-                ? 'bg-canvas-card text-content-primary shadow-sm border border-border-subtle'
-                : 'text-content-tertiary hover:text-content-secondary'
-            }`}
-          >
-            <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-            <span>Admin Clipboard Desk</span>
-            {stats && stats.preApproved > 0 && (
-              <span className="ml-1 text-[11px] font-mono px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 font-bold">
-                {stats.preApproved}
-              </span>
-            )}
-          </button>
         </nav>
       </div>
 
