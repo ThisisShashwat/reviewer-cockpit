@@ -38,25 +38,46 @@ export const App: React.FC = () => {
   // Software Queue Lock: Keep reviewer focused strictly on the software submissions
   const [isSoftwareQueueLocked, setIsSoftwareQueueLocked] = useState(true);
 
+  // Active Queue Status (for maintaining queue context across reviews and next/prev navigation)
+  const [activeQueueStatus, setActiveQueueStatus] = useState<string>('pending');
+
   // Sync Modal
   const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
 
   // URL Synchronization helper
   const updateUrl = useCallback(
-    (page: AppPage, projId: string | null, step: ReviewStep, replace = false) => {
+    (
+      page: AppPage,
+      projId: string | null,
+      step: ReviewStep,
+      replace = false,
+      queueStatus?: string
+    ) => {
       const url = new URL(window.location.href);
+      const effectiveQueue = queueStatus !== undefined ? queueStatus : activeQueueStatus;
       if (page === 'review' && projId) {
         url.searchParams.delete('page');
         url.searchParams.set('project', projId);
         url.searchParams.set('step', String(step));
+        if (effectiveQueue && effectiveQueue !== 'all') {
+          url.searchParams.set('queue', effectiveQueue);
+        } else {
+          url.searchParams.delete('queue');
+        }
       } else if (page === 'admin') {
         url.searchParams.delete('project');
         url.searchParams.delete('step');
+        url.searchParams.delete('queue');
         url.searchParams.set('page', 'admin');
       } else {
         url.searchParams.delete('page');
         url.searchParams.delete('project');
         url.searchParams.delete('step');
+        if (effectiveQueue && effectiveQueue !== 'pending' && effectiveQueue !== 'all') {
+          url.searchParams.set('queue', effectiveQueue);
+        } else {
+          url.searchParams.delete('queue');
+        }
       }
 
       if (replace) {
@@ -65,7 +86,7 @@ export const App: React.FC = () => {
         window.history.pushState({}, '', url.pathname + url.search);
       }
     },
-    []
+    [activeQueueStatus]
   );
 
   // Initialize state from URL params on first mount
@@ -74,12 +95,17 @@ export const App: React.FC = () => {
     const pageParam = searchParams.get('page');
     const projectParam = searchParams.get('project');
     const stepParam = searchParams.get('step');
+    const queueParam = searchParams.get('queue');
+
+    if (queueParam) {
+      setActiveQueueStatus(queueParam);
+    }
 
     if (projectParam) {
       setActiveProjectId(projectParam);
       setCurrentPage('review');
       if (stepParam !== null && !isNaN(Number(stepParam))) {
-        const s = Math.max(0, Math.min(5, parseInt(stepParam, 10))) as ReviewStep;
+        const s = Math.max(0, Math.min(6, parseInt(stepParam, 10))) as ReviewStep;
         setActiveStep(s);
       }
     } else if (pageParam === 'admin') {
@@ -96,12 +122,17 @@ export const App: React.FC = () => {
       const pageParam = searchParams.get('page');
       const projectParam = searchParams.get('project');
       const stepParam = searchParams.get('step');
+      const queueParam = searchParams.get('queue');
+
+      if (queueParam) {
+        setActiveQueueStatus(queueParam);
+      }
 
       if (projectParam) {
         setActiveProjectId(projectParam);
         setCurrentPage('review');
         if (stepParam !== null && !isNaN(Number(stepParam))) {
-          const s = Math.max(0, Math.min(5, parseInt(stepParam, 10))) as ReviewStep;
+          const s = Math.max(0, Math.min(6, parseInt(stepParam, 10))) as ReviewStep;
           setActiveStep(s);
         } else {
           setActiveStep(0);
@@ -164,6 +195,11 @@ export const App: React.FC = () => {
     const current = projects.find((p) => p.id === activeProjectId);
     if (current) {
       setActiveProject(current);
+      // If direct deep link without queue param, sync queue context to project's own status
+      const searchParams = new URLSearchParams(window.location.search);
+      if (!searchParams.get('queue') && current.cockpitStatus) {
+        setActiveQueueStatus(current.cockpitStatus);
+      }
     }
 
     fetchCockpitProject(activeProjectId)
@@ -182,38 +218,59 @@ export const App: React.FC = () => {
     }
   }, [activeProjectId, projects]);
 
-  // Active navigation list depending on whether queue lock is active
+  // Active navigation list depending on whether queue lock is active and active queue status
   const activeReviewList = useMemo(() => {
+    let list = projects;
     if (isSoftwareQueueLocked) {
       const software = projects.filter((p) => p.projectType === 'software');
-      // If reviewing pending software, prioritize pending items while keeping active project in list
-      const pendingSoftware = software.filter(
-        (p) => p.cockpitStatus === 'pending' || p.id === activeProjectId
-      );
-      if (pendingSoftware.length > 0) return pendingSoftware;
-      return software.length > 0 ? software : projects;
+      list = software.length > 0 ? software : projects;
     }
-    return projects;
-  }, [projects, isSoftwareQueueLocked, activeProjectId]);
+
+    const queueStatus = activeQueueStatus || activeProject?.cockpitStatus || 'pending';
+    if (queueStatus !== 'all') {
+      const statusFiltered = list.filter((p) => p.cockpitStatus === queueStatus);
+      if (statusFiltered.length > 0) {
+        // If activeProjectId is set but not in statusFiltered (e.g. status changed), include it
+        if (activeProjectId && !statusFiltered.some((p) => p.id === activeProjectId)) {
+          const current = projects.find((p) => p.id === activeProjectId);
+          if (current) return [...statusFiltered, current];
+        }
+        return statusFiltered;
+      }
+    }
+
+    return list;
+  }, [projects, isSoftwareQueueLocked, activeQueueStatus, activeProject?.cockpitStatus, activeProjectId]);
 
   // Launch review mode for a project
-  const handleStartReview = (project: CockpitProject) => {
+  const handleStartReview = (
+    project: CockpitProject,
+    queueContext?: { status: string; track: string }
+  ) => {
     // If selecting a software project, keep lock active; if selecting hardware, unlock
     if (project.projectType === 'hardware') {
       setIsSoftwareQueueLocked(false);
     } else {
       setIsSoftwareQueueLocked(true);
     }
+
+    const targetStatus =
+      queueContext && queueContext.status !== 'all'
+        ? queueContext.status
+        : project.cockpitStatus || 'pending';
+    setActiveQueueStatus(targetStatus);
+
     setActiveProjectId(project.id);
     // If pending: start at Stage 0 (History). If pre-approved or view-only: start directly at Stage 6 (Verdict Desk)!
     const initialStep: ReviewStep = project.cockpitStatus === 'pending' ? 0 : 6;
     setActiveStep(initialStep);
     setCurrentPage('review');
-    updateUrl('review', project.id, initialStep);
+    updateUrl('review', project.id, initialStep, false, targetStatus);
   };
 
   const handleStartSoftwareQueue = () => {
     setIsSoftwareQueueLocked(true);
+    setActiveQueueStatus('pending');
     const softwareProjects = projects.filter((p) => p.projectType === 'software');
     const firstPending =
       softwareProjects.find((p) => p.cockpitStatus === 'pending') || softwareProjects[0];
@@ -221,30 +278,30 @@ export const App: React.FC = () => {
       setActiveProjectId(firstPending.id);
       setActiveStep(0);
       setCurrentPage('review');
-      updateUrl('review', firstPending.id, 0);
+      updateUrl('review', firstPending.id, 0, false, 'pending');
     }
   };
 
   const handleStepChange = (step: ReviewStep) => {
     setActiveStep(step);
     if (activeProjectId) {
-      updateUrl('review', activeProjectId, step, true);
+      updateUrl('review', activeProjectId, step, true, activeQueueStatus);
     }
   };
 
   const handleBackToQueue = () => {
     setCurrentPage('queue');
     setActiveProjectId(null);
-    updateUrl('queue', null, 0);
+    updateUrl('queue', null, 0, false, activeQueueStatus);
   };
 
   const handleNavigate = (page: AppPage) => {
     setCurrentPage(page);
     if (page !== 'review') {
       setActiveProjectId(null);
-      updateUrl(page, null, 0);
+      updateUrl(page, null, 0, false, activeQueueStatus);
     } else if (activeProjectId) {
-      updateUrl('review', activeProjectId, activeStep);
+      updateUrl('review', activeProjectId, activeStep, false, activeQueueStatus);
     }
   };
 
@@ -259,7 +316,7 @@ export const App: React.FC = () => {
       setActiveProjectId(next.id);
       const nextStep: ReviewStep = next.cockpitStatus === 'pending' ? 0 : 6;
       setActiveStep(nextStep);
-      updateUrl('review', next.id, nextStep);
+      updateUrl('review', next.id, nextStep, false, activeQueueStatus);
     }
   };
 
@@ -269,7 +326,7 @@ export const App: React.FC = () => {
       setActiveProjectId(prev.id);
       const prevStep: ReviewStep = prev.cockpitStatus === 'pending' ? 0 : 6;
       setActiveStep(prevStep);
-      updateUrl('review', prev.id, prevStep);
+      updateUrl('review', prev.id, prevStep, false, activeQueueStatus);
     }
   };
 
@@ -283,24 +340,46 @@ export const App: React.FC = () => {
     );
     loadProjects();
 
-    // Auto-advance specifically from pending queue only
-    const remainingPending = projects.filter(
-      (p) =>
-        p.cockpitStatus === 'pending' &&
-        p.id !== updatedProject.id &&
-        (isSoftwareQueueLocked ? p.projectType === 'software' : true)
-    );
+    // Advance SEQUENTIALLY to the next project in the active queue
+    const currentList = activeReviewList;
+    const currentIndex = currentList.findIndex((p) => p.id === updatedProject.id);
+    const targetStatus = activeQueueStatus === 'pre_approved' ? 'pre_approved' : 'pending';
 
-    if (remainingPending.length > 0) {
-      const next = remainingPending[0];
-      setActiveProjectId(next.id);
-      setActiveStep(0);
-      updateUrl('review', next.id, 0);
+    // 1. Search forward (items after currentIndex)
+    let nextProject: CockpitProject | undefined;
+    if (currentIndex !== -1) {
+      nextProject = currentList
+        .slice(currentIndex + 1)
+        .find(
+          (p) =>
+            p.cockpitStatus === targetStatus &&
+            p.id !== updatedProject.id &&
+            (isSoftwareQueueLocked ? p.projectType === 'software' : true)
+        );
+    }
+
+    // 2. If no items forward, wrap around from beginning (to earlier skipped items)
+    if (!nextProject) {
+      nextProject = currentList
+        .slice(0, currentIndex !== -1 ? currentIndex : undefined)
+        .find(
+          (p) =>
+            p.cockpitStatus === targetStatus &&
+            p.id !== updatedProject.id &&
+            (isSoftwareQueueLocked ? p.projectType === 'software' : true)
+        );
+    }
+
+    if (nextProject) {
+      setActiveProjectId(nextProject.id);
+      const nextStep: ReviewStep = nextProject.cockpitStatus === 'pending' ? 0 : 6;
+      setActiveStep(nextStep);
+      updateUrl('review', nextProject.id, nextStep, false, activeQueueStatus);
       toast.success(
-        `Recorded into Pre-Approved! Advanced to next pending project: ${next.projectName}`
+        `Recorded! Advanced to next project: ${nextProject.projectName}`
       );
     } else {
-      toast.success('Verdict recorded! All pending projects in this queue have been completed.');
+      toast.success(`Verdict recorded! All ${targetStatus} projects in this queue have been completed.`);
       handleBackToQueue();
     }
   };
@@ -312,21 +391,40 @@ export const App: React.FC = () => {
     );
     loadProjects();
 
-    // Auto-advance to next pre-approved project
-    const remainingPreApproved = projects.filter(
-      (p) =>
-        p.cockpitStatus === 'pre_approved' &&
-        p.id !== completedProject.id &&
-        (isSoftwareQueueLocked ? p.projectType === 'software' : true)
-    );
+    const currentList = activeReviewList;
+    const currentIndex = currentList.findIndex((p) => p.id === completedProject.id);
 
-    if (remainingPreApproved.length > 0) {
-      const next = remainingPreApproved[0];
-      setActiveProjectId(next.id);
+    // 1. Search forward
+    let nextProject: CockpitProject | undefined;
+    if (currentIndex !== -1) {
+      nextProject = currentList
+        .slice(currentIndex + 1)
+        .find(
+          (p) =>
+            p.cockpitStatus === 'pre_approved' &&
+            p.id !== completedProject.id &&
+            (isSoftwareQueueLocked ? p.projectType === 'software' : true)
+        );
+    }
+
+    // 2. Wrap around from beginning
+    if (!nextProject) {
+      nextProject = currentList
+        .slice(0, currentIndex !== -1 ? currentIndex : undefined)
+        .find(
+          (p) =>
+            p.cockpitStatus === 'pre_approved' &&
+            p.id !== completedProject.id &&
+            (isSoftwareQueueLocked ? p.projectType === 'software' : true)
+        );
+    }
+
+    if (nextProject) {
+      setActiveProjectId(nextProject.id);
       setActiveStep(6);
-      updateUrl('review', next.id, 6);
+      updateUrl('review', nextProject.id, 6, false, activeQueueStatus);
       toast.success(
-        `Marked as Completed! Advanced to next pre-approved project: ${next.projectName}`
+        `Marked as Completed! Advanced to next pre-approved project: ${nextProject.projectName}`
       );
     } else {
       toast.success('All pre-approved projects have been processed!');
@@ -357,6 +455,7 @@ export const App: React.FC = () => {
           <QueuePage
             projects={projects}
             stats={stats}
+            initialStatus={activeQueueStatus}
             onSelectProject={handleStartReview}
             onStartSoftwareQueue={handleStartSoftwareQueue}
             isLoading={isLoading}
@@ -370,6 +469,7 @@ export const App: React.FC = () => {
               allProjects={projects}
               currentIndex={currentProjectIndex >= 0 ? currentProjectIndex : 0}
               totalProjects={activeReviewList.length}
+              activeQueueStatus={activeQueueStatus}
               isSoftwareQueueLocked={isSoftwareQueueLocked}
               onToggleQueueLock={() => setIsSoftwareQueueLocked((l) => !l)}
               onBackToQueue={handleBackToQueue}

@@ -162,16 +162,32 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
       advanced: 'Advanced',
       highly_experienced: 'Highly Experienced / Pro',
     };
-    const expText = applied.submitter_experience_level
-      ? (expMap[applied.submitter_experience_level] || applied.submitter_experience_level)
-      : 'Uncalibrated';
-
+    const currentExp = applied.submitter_experience_level;
     const lines: string[] = [
       `Project: ${project.projectName || 'Unnamed'}`,
       `Hackatime ID: ${project.hackatimeId || project.id || 'N/A'}`,
-      `Experience: ${expText}`,
-      `Shipped: Yes`,
     ];
+
+    if (currentExp && currentExp.toLowerCase() !== 'uncalibrated') {
+      const expText = expMap[currentExp] || currentExp;
+      lines.push(`Experience: ${expText}`);
+    }
+
+    const isLowQualityReadme = applied.shipped_readme_status === 'low_quality';
+    const isAiReadme = applied.shipped_readme_status === 'ai_generated';
+    const customReadmeNote = (applied.note_shipped_readme || '')?.trim();
+    if (customReadmeNote) {
+      const noteText = customReadmeNote.toLowerCase().includes('readme')
+        ? customReadmeNote
+        : `${isLowQualityReadme ? 'low quality ' : isAiReadme ? 'AI-generated ' : ''}README: ${customReadmeNote}`;
+      lines.push(`Shipped: Yes (${noteText})`);
+    } else if (isLowQualityReadme) {
+      lines.push(`Shipped: Yes (low quality README)`);
+    } else if (isAiReadme) {
+      lines.push(`Shipped: Yes (AI-generated README)`);
+    } else {
+      lines.push(`Shipped: Yes`);
+    }
 
     let commitsSummary = applied.commits_summary;
     if (applied.code_commits_count !== undefined || applied.cosmetic_commits_count !== undefined) {
@@ -194,6 +210,50 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
     lines.push(`Commits: ${commitsSummary}`);
 
     lines.push(`Verdict: ${verdictText}`);
+
+    // Failed checklist points if rejecting
+    const failedList: string[] = [];
+    const isDoubleDipFailed =
+      applied.stage1_double_dip_checked === false ||
+      applied.stage1_halceon_reviewed === false ||
+      applied.flag_potential_double_dip === true;
+
+    if (isDoubleDipFailed) {
+      const prog =
+        applied.double_dipped_program ||
+        (project.archiveUrl?.includes('high-seas') ? 'High Seas' :
+         project.archiveUrl?.includes('arcade') ? 'Arcade' :
+         project.archiveUrl?.includes('blot') ? 'Blot' :
+         project.archiveUrl?.includes('stardance') ? 'Stardance' :
+         project.archiveUrl?.includes('sprig') ? 'Sprig' : undefined);
+
+      if (prog) {
+        failedList.push(`- Double dipped from ${prog}`);
+      } else {
+        failedList.push('- Double dipped from prior program');
+      }
+    }
+
+    const isArchiveProgressionFailed =
+      applied.archive_progression_verified === false ||
+      applied.zero_progress_blocked === true;
+
+    if (isArchiveProgressionFailed) {
+      const archHash = applied.archive_short_hash || applied.archive_commit_hash?.slice(0, 7);
+      const curHash = applied.current_short_hash || applied.current_commit_hash?.slice(0, 7);
+      if (archHash && curHash) {
+        failedList.push(`- Archive vs Code Progression: Compared commit ${archHash} (from unified archive) with commit ${curHash} (current)`);
+      } else if (archHash) {
+        failedList.push(`- Archive vs Code Progression: Compared commit ${archHash} (from unified archive) with current code - no genuine additions beyond baseline`);
+      } else {
+        failedList.push(`- Archive vs Code Progression: Compared unified archive with current code - no genuine additions beyond baseline`);
+      }
+    }
+
+    if (failedList.length > 0) {
+      lines.push('');
+      lines.push(...failedList);
+    }
 
     if (justificationText.trim()) {
       lines.push('');

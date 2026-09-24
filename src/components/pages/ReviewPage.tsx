@@ -47,6 +47,7 @@ interface ReviewPageProps {
   allProjects?: CockpitProject[];
   currentIndex: number;
   totalProjects: number;
+  activeQueueStatus?: string;
   isSoftwareQueueLocked?: boolean;
   onToggleQueueLock?: () => void;
   onBackToQueue: () => void;
@@ -67,6 +68,7 @@ export const ReviewPage: React.FC<ReviewPageProps> = ({
   allProjects = [],
   currentIndex,
   totalProjects,
+  activeQueueStatus,
   isSoftwareQueueLocked = true,
   onToggleQueueLock,
   onBackToQueue,
@@ -128,6 +130,31 @@ export const ReviewPage: React.FC<ReviewPageProps> = ({
     });
   };
 
+  // Auto-sync baseline archive commit and current HEAD commit to reviewChecklist
+  useEffect(() => {
+    if (baselineArchiveCommit?.shortHash && reviewChecklist['archive_short_hash'] !== baselineArchiveCommit.shortHash) {
+      setReviewChecklist((prev) => ({
+        ...prev,
+        archive_short_hash: baselineArchiveCommit.shortHash,
+        archive_commit_hash: baselineArchiveCommit.commitHash,
+      }));
+    }
+  }, [baselineArchiveCommit, reviewChecklist]);
+
+  useEffect(() => {
+    const headSha = gitHubData?.commits?.[0]?.sha;
+    if (headSha) {
+      const shortSha = headSha.slice(0, 7);
+      if (reviewChecklist['current_short_hash'] !== shortSha) {
+        setReviewChecklist((prev) => ({
+          ...prev,
+          current_short_hash: shortSha,
+          current_commit_hash: headSha,
+        }));
+      }
+    }
+  }, [gitHubData?.commits, reviewChecklist]);
+
   // Global Keyboard Shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -171,7 +198,7 @@ export const ReviewPage: React.FC<ReviewPageProps> = ({
       {/* 1. Contextual Top Navigation Bar */}
       <header className="h-14 bg-canvas-card border-b border-border-subtle px-6 flex items-center justify-between shrink-0 select-none z-10">
         {/* Left: Back + Queue Lock Status */}
-        <div className="flex items-center gap-3 min-w-0">
+        <div className="flex items-center gap-2.5 min-w-0">
           <button
             type="button"
             onClick={onBackToQueue}
@@ -182,11 +209,37 @@ export const ReviewPage: React.FC<ReviewPageProps> = ({
             <span>Back to Queue</span>
           </button>
 
+          {activeQueueStatus && (
+            <span
+              className={`text-[11px] font-semibold px-2.5 py-1 rounded-md border shrink-0 ${
+                activeQueueStatus === 'pre_approved'
+                  ? 'bg-amber-50 border-amber-200 text-amber-800'
+                  : activeQueueStatus === 'completed_pre_approved'
+                  ? 'bg-purple-50 border-purple-200 text-purple-700'
+                  : activeQueueStatus === 'rejected'
+                  ? 'bg-rose-50 border-rose-200 text-rose-700'
+                  : activeQueueStatus === 'flagged_fraud'
+                  ? 'bg-orange-50 border-orange-200 text-orange-700'
+                  : 'bg-zinc-100 border-zinc-200 text-zinc-700'
+              }`}
+            >
+              {activeQueueStatus === 'pre_approved'
+                ? 'Pre-Approved Queue'
+                : activeQueueStatus === 'completed_pre_approved'
+                ? 'Completed Queue'
+                : activeQueueStatus === 'rejected'
+                ? 'Rejected Queue'
+                : activeQueueStatus === 'flagged_fraud'
+                ? 'Fraud Queue'
+                : 'Pending Queue'}
+            </span>
+          )}
+
           {onToggleQueueLock && (
             <button
               type="button"
               onClick={onToggleQueueLock}
-              className={`flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-md border transition-colors cursor-pointer ${
+              className={`flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-md border transition-colors cursor-pointer shrink-0 ${
                 isSoftwareQueueLocked
                   ? 'bg-blue-50 border-blue-200 text-blue-700'
                   : 'bg-canvas-subtle border-border-subtle text-content-secondary'
@@ -243,7 +296,7 @@ export const ReviewPage: React.FC<ReviewPageProps> = ({
             onClick={onPrevProject}
             disabled={currentIndex <= 0}
             className="p-1.5 rounded-lg bg-canvas-card border border-border-subtle text-content-secondary hover:text-content-primary hover:bg-canvas-hover disabled:opacity-30 disabled:cursor-not-allowed transition-colors shadow-sm cursor-pointer"
-            title="Previous Submission (P)"
+            title={`Previous Submission in ${activeQueueStatus === 'pre_approved' ? 'Pre-Approved' : 'Queue'} (P)`}
           >
             <ChevronLeft className="w-4 h-4" />
           </button>
@@ -255,7 +308,7 @@ export const ReviewPage: React.FC<ReviewPageProps> = ({
             onClick={onNextProject}
             disabled={currentIndex >= totalProjects - 1}
             className="p-1.5 rounded-lg bg-canvas-card border border-border-subtle text-content-secondary hover:text-content-primary hover:bg-canvas-hover disabled:opacity-30 disabled:cursor-not-allowed transition-colors shadow-sm cursor-pointer"
-            title="Next Submission (N)"
+            title={`Next Submission in ${activeQueueStatus === 'pre_approved' ? 'Pre-Approved' : 'Queue'} (N)`}
           >
             <ChevronRight className="w-4 h-4" />
           </button>
@@ -349,6 +402,7 @@ export const ReviewPage: React.FC<ReviewPageProps> = ({
               project={project}
               verdict={verdict}
               gitHubData={gitHubData}
+              baselineArchiveCommit={baselineArchiveCommit}
               reviewChecklist={reviewChecklist}
               onToggleChecklist={toggleChecklist}
               onVerdictSubmitted={onVerdictSubmitted}

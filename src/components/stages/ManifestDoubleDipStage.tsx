@@ -345,15 +345,62 @@ export const ManifestDoubleDipStage: React.FC<ManifestDoubleDipStageProps> = ({
 
   const isDoubleDipDetected = Boolean(matchingHalceonShip);
 
+  const detectedProgramName =
+    matchingHalceonShip?.program ||
+    similarHalceonShip?.program ||
+    (project.archiveUrl?.includes('high-seas') ? 'High Seas' :
+     project.archiveUrl?.includes('arcade') ? 'Arcade' :
+     project.archiveUrl?.includes('blot') ? 'Blot' :
+     project.archiveUrl?.includes('stardance') ? 'Stardance' :
+     project.archiveUrl?.includes('sprig') ? 'Sprig' : undefined);
+
+  // Sync detected program name with reviewChecklist
+  useEffect(() => {
+    if (detectedProgramName && reviewChecklist?.['double_dipped_program'] !== detectedProgramName) {
+      onToggleChecklist?.('double_dipped_program', detectedProgramName);
+    }
+  }, [detectedProgramName, onToggleChecklist, reviewChecklist]);
+
+  // Sync archive commit hashes to reviewChecklist
+  useEffect(() => {
+    if (archiveCommitData?.success && archiveCommitData.commitHash) {
+      const short = archiveCommitData.shortHash || archiveCommitData.commitHash.slice(0, 7);
+      if (reviewChecklist?.['archive_short_hash'] !== short) {
+        onToggleChecklist?.('archive_short_hash', short);
+        onToggleChecklist?.('archive_commit_hash', archiveCommitData.commitHash);
+      }
+    }
+  }, [archiveCommitData, onToggleChecklist, reviewChecklist]);
+
   const handlePass = (key: string) => {
     if (onToggleChecklist) {
       onToggleChecklist(key, true);
+      if (key === 'stage1_double_dip_checked') {
+        onToggleChecklist('stage1_halceon_reviewed', true);
+        onToggleChecklist('zero_progress_blocked', false);
+        onToggleChecklist('flag_potential_double_dip', false);
+      } else if (key === 'stage1_halceon_reviewed') {
+        onToggleChecklist('stage1_double_dip_checked', true);
+        onToggleChecklist('zero_progress_blocked', false);
+        onToggleChecklist('flag_potential_double_dip', false);
+      }
     }
   };
 
   const handleFail = (key: string) => {
     if (onToggleChecklist) {
       onToggleChecklist(key, false);
+      if (key === 'stage1_double_dip_checked') {
+        onToggleChecklist('stage1_halceon_reviewed', false);
+        if (detectedProgramName) {
+          onToggleChecklist('double_dipped_program', detectedProgramName);
+        }
+      } else if (key === 'stage1_halceon_reviewed') {
+        onToggleChecklist('stage1_double_dip_checked', false);
+        if (detectedProgramName) {
+          onToggleChecklist('double_dipped_program', detectedProgramName);
+        }
+      }
     }
   };
 
@@ -394,8 +441,19 @@ export const ManifestDoubleDipStage: React.FC<ManifestDoubleDipStageProps> = ({
           <button
             type="button"
             onClick={() => {
+              onToggleChecklist?.('stage1_double_dip_checked', false);
+              onToggleChecklist?.('stage1_halceon_reviewed', false);
+              onToggleChecklist?.('flag_potential_double_dip', true);
+              if (detectedProgramName) {
+                onToggleChecklist?.('double_dipped_program', detectedProgramName);
+              }
+              if (flagNote.trim()) {
+                onToggleChecklist?.('note_double_dip', flagNote.trim());
+              }
               if (onEarlyExit && flagNote.trim()) {
                 onEarlyExit(`Double-Dip Concern: ${flagNote.trim()}`);
+              } else if (onEarlyExit) {
+                onEarlyExit(`Double-Dip Flagged from ${detectedProgramName || 'prior program'}`);
               }
               setIsFlagging(false);
             }}
@@ -754,11 +812,24 @@ export const ManifestDoubleDipStage: React.FC<ManifestDoubleDipStageProps> = ({
                       {onEarlyExit && (
                         <button
                           type="button"
-                          onClick={() =>
-                            onEarlyExit(
+                          onClick={() => {
+                            onToggleChecklist?.('archive_progression_verified', false);
+                            onToggleChecklist?.('stage1_double_dip_checked', false);
+                            onToggleChecklist?.('stage1_halceon_reviewed', false);
+                            onToggleChecklist?.('zero_progress_blocked', true);
+                            if (matchingHalceonShip?.program) {
+                              onToggleChecklist?.('double_dipped_program', matchingHalceonShip.program);
+                            }
+                            if (effectiveShortHash) {
+                              onToggleChecklist?.('archive_short_hash', effectiveShortHash);
+                            }
+                            if (archiveCommitData?.commitHash) {
+                              onToggleChecklist?.('archive_commit_hash', archiveCommitData.commitHash);
+                            }
+                            onEarlyExit?.(
                               `Zero Progress Double-Dip: Repository HEAD is identical to previously approved archive commit (${effectiveShortHash}) from "${matchingHalceonShip.repo}" in ${matchingHalceonShip.program}`
-                            )
-                          }
+                            );
+                          }}
                           className="px-4 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold shrink-0 shadow-md transition-colors cursor-pointer"
                         >
                           Reject for Zero Progress
@@ -876,11 +947,17 @@ export const ManifestDoubleDipStage: React.FC<ManifestDoubleDipStageProps> = ({
 
             <div className="space-y-2.5">
               <PassFailControl
-                label="Halceon Cross-YSWS Ships & Archives Inspected"
-                description={`Verified complete track record (${halceonTotalShips} prior ships in Stardance, Arcade, High Seas, Blot) and checked archive presence.`}
-                status={reviewChecklist['stage1_halceon_reviewed']}
-                onPass={() => handlePass('stage1_halceon_reviewed')}
-                onFail={() => handleFail('stage1_halceon_reviewed')}
+                label="Cross-Program Double-Dipping & Prior Ships"
+                description={
+                  matchingHalceonShip
+                    ? `Prior submission "${matchingHalceonShip.repo}" found in ${matchingHalceonShip.program} (${matchingHalceonShip.hours}h). Must demonstrate genuine new work beyond baseline.`
+                    : similarHalceonShip
+                    ? `Similar submission "${similarHalceonShip.repo}" found in ${similarHalceonShip.program}. Verify code uniqueness.`
+                    : `Verified clean cross-program history (${halceonTotalShips} prior ships inspected across Arcade, High Seas, Blot, etc.). No uncredited duplicate resubmissions.`
+                }
+                status={reviewChecklist['stage1_double_dip_checked']}
+                onPass={() => handlePass('stage1_double_dip_checked')}
+                onFail={() => handleFail('stage1_double_dip_checked')}
               />
 
               <PassFailControl

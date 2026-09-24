@@ -10,7 +10,11 @@ import { CockpitProject, QueueStats } from '../../lib/types';
 interface QueuePageProps {
   projects: CockpitProject[];
   stats?: QueueStats;
-  onSelectProject: (project: CockpitProject) => void;
+  initialStatus?: string;
+  onSelectProject: (
+    project: CockpitProject,
+    queueContext?: { status: string; track: string }
+  ) => void;
   onStartSoftwareQueue?: () => void;
   isLoading: boolean;
 }
@@ -18,14 +22,21 @@ interface QueuePageProps {
 export const QueuePage: React.FC<QueuePageProps> = ({
   projects,
   stats,
+  initialStatus,
   onSelectProject,
   onStartSoftwareQueue,
   isLoading,
 }) => {
   const [search, setSearch] = useState('');
-  const [selectedStatus, setSelectedStatus] = useState<string>('pending');
+  const [selectedStatus, setSelectedStatus] = useState<string>(initialStatus || 'pending');
   const [selectedTrack, setSelectedTrack] = useState<string>('all');
   const [highlightedIndex, setHighlightedIndex] = useState(0);
+
+  useEffect(() => {
+    if (initialStatus && initialStatus !== selectedStatus) {
+      setSelectedStatus(initialStatus);
+    }
+  }, [initialStatus]);
 
   // Filter projects based on search query, status, and track
   const filteredProjects = useMemo(() => {
@@ -111,7 +122,10 @@ export const QueuePage: React.FC<QueuePageProps> = ({
         setHighlightedIndex((i) => Math.max(i - 1, 0));
       } else if (e.key === 'Enter') {
         if (filteredProjects[highlightedIndex]) {
-          onSelectProject(filteredProjects[highlightedIndex]);
+          onSelectProject(filteredProjects[highlightedIndex], {
+            status: selectedStatus,
+            track: selectedTrack,
+          });
         }
       }
     };
@@ -381,7 +395,12 @@ export const QueuePage: React.FC<QueuePageProps> = ({
                   return (
                     <tr
                       key={p.id}
-                      onClick={() => onSelectProject(p)}
+                      onClick={() =>
+                        onSelectProject(p, {
+                          status: selectedStatus,
+                          track: selectedTrack,
+                        })
+                      }
                       onMouseEnter={() => setHighlightedIndex(idx)}
                       className={`cursor-pointer transition-colors ${
                         isHighlighted ? 'bg-canvas-hover' : 'hover:bg-canvas-hover/60'
@@ -463,7 +482,10 @@ export const QueuePage: React.FC<QueuePageProps> = ({
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
-                            onSelectProject(p);
+                            onSelectProject(p, {
+                              status: selectedStatus,
+                              track: selectedTrack,
+                            });
                           }}
                           className="px-3 py-1 rounded-lg bg-canvas-card border border-border-subtle text-xs font-semibold text-content-primary hover:bg-brand-orange hover:text-white hover:border-brand-orange transition-colors inline-flex items-center gap-1 shadow-sm"
                         >

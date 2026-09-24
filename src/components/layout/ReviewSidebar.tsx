@@ -13,7 +13,7 @@ import {
 import { toast } from 'sonner';
 import { fetchUserNotes, saveUserNote } from '../../lib/api';
 import { AuditLogEntry, CockpitProject, UserNote } from '../../lib/types';
-import { decodeHtmlEntities } from '../../lib/utils';
+import { decodeHtmlEntities, computeChecklistAuditSummary } from '../../lib/utils';
 
 interface ReviewSidebarProps {
   project: CockpitProject;
@@ -83,15 +83,7 @@ export const ReviewSidebar: React.FC<ReviewSidebarProps> = ({
     setTimeout(() => setCopiedLink(null), 2000);
   };
 
-  const passedChecksCount = Object.entries(reviewChecklist).filter(([k, v]) => {
-    if (k.startsWith('flag_') || k.endsWith('_status')) return false;
-    if (k === 'submitter_experience_level') return !!v;
-    return v === true || v === 'pass' || v === 'ai_generated' || v === 'deflate';
-  }).length;
-  const failedChecksCount = Object.entries(reviewChecklist).filter(([k, v]) => {
-    if (k.startsWith('flag_') || k.endsWith('_status') || k === 'submitter_experience_level') return false;
-    return v === false || v === 'fail' || v === 'disallowed_host';
-  }).length;
+  const checklistSummary = computeChecklistAuditSummary(reviewChecklist);
   const messages = (project as any).messages || [];
 
   return (
@@ -128,6 +120,18 @@ export const ReviewSidebar: React.FC<ReviewSidebarProps> = ({
             </span>
           </div>
         </div>
+
+        {/* Submitter Project Description */}
+        {project.description?.trim() && (
+          <div className="space-y-1 pt-1 border-t border-[#27272a]/60">
+            <span className="text-[10px] font-semibold text-[#a1a1aa] uppercase tracking-wider block">
+              Description
+            </span>
+            <div className="p-2.5 rounded-lg bg-[#18181b] border border-[#27272a] text-xs text-[#d4d4d8] leading-relaxed whitespace-pre-wrap max-h-40 overflow-y-auto select-text font-sans">
+              {decodeHtmlEntities(project.description.trim())}
+            </div>
+          </div>
+        )}
 
         {/* Quick Links with Copy and Open (Supports up to 4+ Code, Demo, and Archive Links) */}
         <div className="space-y-1.5 pt-1">
@@ -278,27 +282,27 @@ export const ReviewSidebar: React.FC<ReviewSidebarProps> = ({
         <div className="flex items-center justify-between text-xs font-semibold text-content-primary">
           <span>Review Progress</span>
           <div className="flex items-center gap-1.5 font-mono text-[11px]">
-            <span className="text-emerald-500 font-bold">{passedChecksCount} passed</span>
-            {failedChecksCount > 0 && (
-              <span className="text-rose-500 font-bold">({failedChecksCount} flagged)</span>
+            <span className="text-emerald-500 font-bold">{checklistSummary.passed} passed</span>
+            {checklistSummary.failed > 0 && (
+              <span className="text-rose-500 font-bold">({checklistSummary.failed} flagged)</span>
             )}
-            <span className="text-content-muted">/ {Math.max(10, passedChecksCount + failedChecksCount)}</span>
+            <span className="text-content-muted">/ {checklistSummary.total}</span>
           </div>
         </div>
         <div className="h-2 w-full bg-[#27272a] rounded-full overflow-hidden flex">
           <div
             className="h-full bg-emerald-500 transition-all duration-300"
             style={{
-              width: `${(passedChecksCount / Math.max(10, passedChecksCount + failedChecksCount)) * 100}%`,
+              width: `${(checklistSummary.passed / checklistSummary.total) * 100}%`,
             }}
-            title={`${passedChecksCount} passed`}
+            title={`${checklistSummary.passed} passed`}
           />
           <div
             className="h-full bg-rose-500 transition-all duration-300"
             style={{
-              width: `${(failedChecksCount / Math.max(10, passedChecksCount + failedChecksCount)) * 100}%`,
+              width: `${(checklistSummary.failed / checklistSummary.total) * 100}%`,
             }}
-            title={`${failedChecksCount} flagged`}
+            title={`${checklistSummary.failed} flagged`}
           />
         </div>
       </div>

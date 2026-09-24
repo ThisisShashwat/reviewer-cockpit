@@ -111,7 +111,7 @@ export const ReadmeDeliverablesStage: React.FC<ReadmeDeliverablesStageProps> = (
       onToggleChecklist?.('shipped_readme_valid', true);
       onToggleChecklist?.('flag_ai_generated', true);
     } else if (val === 'low_quality') {
-      onToggleChecklist?.('shipped_readme_valid', false);
+      onToggleChecklist?.('shipped_readme_valid', true);
     } else if (val === 'fail') {
       onToggleChecklist?.('shipped_readme_valid', false);
     }

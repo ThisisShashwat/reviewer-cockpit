@@ -74,10 +74,11 @@ function formatClipboardJustification(project: CockpitProject, verdict: VerdictD
     advanced: "Advanced",
     highly_experienced: "Highly Experienced / Pro",
   };
-  const expText = applied.submitter_experience_level
-    ? expMap[applied.submitter_experience_level] || applied.submitter_experience_level
-    : "Uncalibrated";
-  lines.push(`Experience: ${expText}`);
+  const currentExp = applied.submitter_experience_level;
+  if (currentExp && currentExp.toLowerCase() !== "uncalibrated") {
+    const expText = expMap[currentExp] || currentExp;
+    lines.push(`Experience: ${expText}`);
+  }
 
   // Shipped status
   const shippedFailures: string[] = [];
@@ -140,8 +141,29 @@ function formatClipboardJustification(project: CockpitProject, verdict: VerdictD
 
   // Failed checklists (strictly what failed; no passed, no skipped)
   const failedList: string[] = [];
-  if (applied.stage1_double_dip_checked === false || applied.zero_progress_blocked === true) {
-    failedList.push("- Double-Dip / Archive Progression: Submission does not demonstrate new additions");
+  const isDoubleDipFailed =
+    applied.stage1_double_dip_checked === false ||
+    applied.stage1_halceon_reviewed === false ||
+    applied.flag_potential_double_dip === true;
+
+  if (isDoubleDipFailed) {
+    const prog =
+      applied.double_dipped_program ||
+      (project.archiveUrl?.includes("high-seas") ? "High Seas" :
+       project.archiveUrl?.includes("arcade") ? "Arcade" :
+       project.archiveUrl?.includes("blot") ? "Blot" :
+       project.archiveUrl?.includes("stardance") ? "Stardance" :
+       project.archiveUrl?.includes("sprig") ? "Sprig" : undefined);
+
+    if (prog) {
+      failedList.push(`- Double dipped from ${prog}`);
+    } else {
+      failedList.push("- Double dipped from prior program");
+    }
+  }
+
+  if (applied.stage1_live_reviewed === false && !isDoubleDipFailed) {
+    failedList.push("- Submitter History: Unresolved conflict in past Hack Club Live submissions");
   }
   if (applied.shipped_name_valid === false) failedList.push("- Project Name: Missing or insufficient project title");
   if (applied.shipped_code_valid === false) failedList.push("- Source Code Repository: Missing or invalid GitHub repository");
@@ -168,6 +190,30 @@ function formatClipboardJustification(project: CockpitProject, verdict: VerdictD
   } else if (applied.telemetry_heartbeats_status === "suspicious" || applied.hackatime_sanity === false) {
     failedList.push("- Hackatime Telemetry: Suspicious coding heartbeats");
   }
+
+  // Stage 5 Git Commits Progression & Forensics
+  const isArchiveProgressionFailed =
+    applied.archive_progression_verified === false ||
+    applied.zero_progress_blocked === true;
+
+  if (isArchiveProgressionFailed) {
+    const archHash =
+      applied.archive_short_hash ||
+      applied.archive_commit_hash?.slice(0, 7) ||
+      (project.archiveUrl && archiveCommitCache.get(project.archiveUrl.replace(/\/git\/?$/, ""))?.shortHash);
+    const curHash =
+      applied.current_short_hash ||
+      applied.current_commit_hash?.slice(0, 7);
+
+    if (archHash && curHash) {
+      failedList.push(`- Archive vs Code Progression: Compared commit ${archHash} (from unified archive) with commit ${curHash} (current)`);
+    } else if (archHash) {
+      failedList.push(`- Archive vs Code Progression: Compared commit ${archHash} (from unified archive) with current code - no genuine additions beyond baseline`);
+    } else {
+      failedList.push(`- Archive vs Code Progression: Compared unified archive with current code - no genuine additions beyond baseline`);
+    }
+  }
+
   if (applied.flag_monolithic_dump || applied.git_progression_status === "ai_dump") {
     failedList.push("- Git Commit Progression: AI coding");
   } else if (applied.git_progression_status === "fail" || applied.commits_diffs === false || applied.git_progression_verified === false) {

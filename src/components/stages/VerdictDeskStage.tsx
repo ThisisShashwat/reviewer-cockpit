@@ -28,11 +28,12 @@ import {
   CheckSquare,
   FileText,
   Tag,
+  Layers,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { CockpitProject, VerdictDetails, GitHubRepoData } from '../../lib/types';
 import { submitCockpitVerdict, markProjectCompletedPreApproved } from '../../lib/api';
-import { decodeHtmlEntities, summarizeCommits, formatCommitsSummary } from '../../lib/utils';
+import { decodeHtmlEntities, summarizeCommits, formatCommitsSummary, computeChecklistAuditSummary } from '../../lib/utils';
 import { PassFailControl } from '../common/PassFailControl';
 import { MultiOptionSelector, SelectorOption } from '../common/MultiOptionSelector';
 
@@ -40,6 +41,14 @@ interface VerdictDeskStageProps {
   project: CockpitProject;
   verdict?: VerdictDetails;
   gitHubData?: Partial<GitHubRepoData>;
+  baselineArchiveCommit?: {
+    commitHash: string;
+    shortHash: string;
+    shipName: string;
+    archiveUrl: string;
+    program?: string;
+    hours?: number;
+  };
   reviewChecklist?: Record<string, any>;
   onToggleChecklist?: (key: string, status?: any) => void;
   onVerdictSubmitted?: (verdict: VerdictDetails, updatedProject: CockpitProject) => void;
@@ -49,6 +58,7 @@ interface VerdictDeskStageProps {
 
 const CHECKLIST_LABELS: Record<string, string> = {
   // Stage 1 History & Double Dip
+  stage1_double_dip_checked: 'Cross-Program Double-Dipping (Duplicate submission from prior program)',
   stage1_halceon_reviewed: 'Halceon Cross-YSWS Ships & Archives Inspected',
   stage1_live_reviewed: 'Live Submissions History Audited',
   zero_progress_blocked: 'Zero Progress Double-Dip (Re-submission without substantial additions)',
@@ -69,7 +79,7 @@ const CHECKLIST_LABELS: Record<string, string> = {
   telemetry_heartbeats_verified: 'Hackatime Telemetry (Missing or unverifiable coding heartbeats)',
   hackatime_sanity: 'Hackatime Telemetry Sanity',
   // Stage 5 Commits & AI
-  stage1_double_dip_checked: 'Archive vs Code Progression (No genuine additions beyond prior archive)',
+  archive_progression_verified: 'Archive vs Code Progression (No genuine additions beyond prior archive)',
   git_progression_status: 'Git Commit Progression (Code dump or lack of incremental progress)',
   git_progression_verified: 'Git Commit Progression (Code dump or lack of incremental progress)',
   commits_diffs: 'Git Commit Progression (Code dump or lack of incremental progress)',
@@ -112,10 +122,11 @@ const VERDICT_TELEMETRY_OPTIONS: SelectorOption<'pass' | 'missing' | 'suspicious
   { id: 'suspicious', label: 'Suspicious', color: 'rose', icon: X },
 ];
 
-const VERDICT_GIT_OPTIONS: SelectorOption<'pass' | 'deflate' | 'ai_dump' | 'fail'>[] = [
+const VERDICT_GIT_OPTIONS: SelectorOption<'pass' | 'deflate' | 'code_dump' | 'ai_code' | 'fail'>[] = [
   { id: 'pass', label: 'Pass (Authentic)', color: 'emerald', icon: Check },
   { id: 'deflate', label: 'Pass w/ Deflation', color: 'amber', icon: AlertTriangle },
-  { id: 'ai_dump', label: 'AI Coding', color: 'purple', icon: Bot },
+  { id: 'code_dump', label: 'Code Dump', color: 'amber', icon: Layers },
+  { id: 'ai_code', label: 'AI Code', color: 'purple', icon: Bot },
   { id: 'fail', label: 'Fail', color: 'rose', icon: X },
 ];
 
@@ -123,6 +134,7 @@ export const VerdictDeskStage: React.FC<VerdictDeskStageProps> = ({
   project,
   verdict,
   gitHubData,
+  baselineArchiveCommit,
   reviewChecklist = {},
   onToggleChecklist,
   onVerdictSubmitted,
@@ -130,6 +142,28 @@ export const VerdictDeskStage: React.FC<VerdictDeskStageProps> = ({
   isReadOnly = false,
 }) => {
   const claimedHours = project.submittedHours || 0;
+
+  // Resolve Archive Commit & Current Commit Hashes for progression checks
+  const archiveShort =
+    reviewChecklist['archive_short_hash'] ||
+    reviewChecklist['archive_commit_hash']?.slice(0, 7) ||
+    baselineArchiveCommit?.shortHash ||
+    baselineArchiveCommit?.commitHash?.slice(0, 7);
+
+  const currentShort =
+    reviewChecklist['current_short_hash'] ||
+    reviewChecklist['current_commit_hash']?.slice(0, 7) ||
+    gitHubData?.commits?.[0]?.sha?.slice(0, 7);
+
+  // Keep reviewChecklist synced with archive and current commit hashes
+  useEffect(() => {
+    if (archiveShort && !reviewChecklist['archive_short_hash']) {
+      onToggleChecklist?.('archive_short_hash', archiveShort);
+    }
+    if (currentShort && !reviewChecklist['current_short_hash']) {
+      onToggleChecklist?.('current_short_hash', currentShort);
+    }
+  }, [archiveShort, currentShort, onToggleChecklist, reviewChecklist]);
 
   // Compute commits breakdown: n code related commits, m cosmetic commits
   const commitsSummary = React.useMemo(() => {
@@ -170,18 +204,31 @@ export const VerdictDeskStage: React.FC<VerdictDeskStageProps> = ({
 
   const failedKeys = Object.entries(reviewChecklist)
     .filter(([k, v]) => {
-      if (k === 'flag_tutorial_plagiarized' || k === 'flag_monolithic_dump' || k === 'flag_deleted_origin_files') return v === true;
-      if (k.startsWith('flag_') || k.startsWith('note_') || k.endsWith('_status') || k === 'submitter_experience_level') return false;
+      if (
+        k === 'flag_tutorial_plagiarized' ||
+        k === 'flag_monolithic_dump' ||
+        k === 'flag_deleted_origin_files' ||
+        k === 'flag_potential_double_dip' ||
+        k === 'zero_progress_blocked'
+      ) return v === true;
+      if (
+        k === 'stage1_halceon_reviewed' ||
+        k.startsWith('flag_') ||
+        k.startsWith('note_') ||
+        k.endsWith('_status') ||
+        k.endsWith('_hash') ||
+        k === 'submitter_experience_level' ||
+        k === 'double_dipped_program' ||
+        k.endsWith('_count') ||
+        k === 'commits_summary'
+      ) return false;
       return v === false || v === 'fail' || v === 'disallowed_host' || v === 'broken';
     })
     .map(([k]) => k);
 
-  const passedCount = Object.entries(reviewChecklist).filter(([k, v]) => {
-    if (k.startsWith('flag_') || k.startsWith('note_') || k.endsWith('_status')) return false;
-    if (k === 'submitter_experience_level') return !!v;
-    return v === true || v === 'pass' || v === 'ai_generated' || v === 'deflate';
-  }).length;
-  const failedCount = failedKeys.length;
+  const checklistSummary = computeChecklistAuditSummary(reviewChecklist);
+  const passedCount = checklistSummary.passed;
+  const failedCount = Math.max(failedKeys.length, checklistSummary.failed);
 
   const defaultAction = verdict?.action || (failedCount > 0 ? 'reject' : 'pre_approve');
   const defaultApprovedHours =
@@ -193,9 +240,30 @@ export const VerdictDeskStage: React.FC<VerdictDeskStageProps> = ({
   const getRejectionBulletPoints = () => {
     const points: string[] = [];
 
-    // Stage 1
-    if (reviewChecklist['stage1_double_dip_checked'] === false || reviewChecklist['zero_progress_blocked'] === true) {
-      points.push('- Double-Dip / Archive Progression: Insufficient new progress beyond archive baseline');
+    // Stage 1: Double-Dipping & Submitter History
+    const isDoubleDipFailed =
+      reviewChecklist['stage1_double_dip_checked'] === false ||
+      reviewChecklist['stage1_halceon_reviewed'] === false ||
+      reviewChecklist['flag_potential_double_dip'] === true;
+
+    if (isDoubleDipFailed) {
+      const prog =
+        reviewChecklist['double_dipped_program'] ||
+        (project.archiveUrl?.includes('high-seas') ? 'High Seas' :
+         project.archiveUrl?.includes('arcade') ? 'Arcade' :
+         project.archiveUrl?.includes('blot') ? 'Blot' :
+         project.archiveUrl?.includes('stardance') ? 'Stardance' :
+         project.archiveUrl?.includes('sprig') ? 'Sprig' : undefined);
+
+      if (prog) {
+        points.push(`- Double dipped from ${prog}`);
+      } else {
+        points.push('- Double dipped from prior program');
+      }
+    }
+
+    if (reviewChecklist['stage1_live_reviewed'] === false && !isDoubleDipFailed) {
+      points.push('- Submitter History: Unresolved conflict in past Hack Club Live submissions');
     }
 
     // Stage 2
@@ -238,9 +306,43 @@ export const VerdictDeskStage: React.FC<VerdictDeskStageProps> = ({
     }
 
     // Stage 5 Git Commits Progression & Forensics
-    if (reviewChecklist['flag_monolithic_dump'] || reviewChecklist['git_progression_status'] === 'ai_dump') {
+    const isArchiveProgressionFailed =
+      reviewChecklist['archive_progression_verified'] === false ||
+      reviewChecklist['zero_progress_blocked'] === true;
+
+    if (isArchiveProgressionFailed) {
+      const archHash =
+        reviewChecklist['archive_short_hash'] ||
+        reviewChecklist['archive_commit_hash']?.slice(0, 7) ||
+        baselineArchiveCommit?.shortHash ||
+        baselineArchiveCommit?.commitHash?.slice(0, 7);
+
+      const curHash =
+        reviewChecklist['current_short_hash'] ||
+        reviewChecklist['current_commit_hash']?.slice(0, 7) ||
+        gitHubData?.commits?.[0]?.sha?.slice(0, 7);
+
+      if (archHash && curHash) {
+        points.push(`- Archive vs Code Progression: Compared commit ${archHash} (from unified archive) with commit ${curHash} (current)`);
+      } else if (archHash) {
+        points.push(`- Archive vs Code Progression: Compared commit ${archHash} (from unified archive) with current code - no genuine additions beyond baseline`);
+      } else {
+        points.push(`- Archive vs Code Progression: Compared unified archive with current code - no genuine additions beyond baseline`);
+      }
+    }
+    if (reviewChecklist['flag_monolithic_dump'] || reviewChecklist['git_progression_status'] === 'code_dump') {
+      points.push('- Git Commit Progression: Monolithic initial dump');
+    }
+    if (reviewChecklist['git_progression_status'] === 'ai_code' || reviewChecklist['git_progression_status'] === 'ai_dump') {
       points.push('- Git Commit Progression: AI coding');
-    } else if (reviewChecklist['git_progression_status'] === 'fail' || reviewChecklist['commits_diffs'] === false || reviewChecklist['git_progression_verified'] === false) {
+    }
+    if (
+      reviewChecklist['git_progression_status'] === 'fail' ||
+      (reviewChecklist['commits_diffs'] === false &&
+        reviewChecklist['git_progression_status'] !== 'code_dump' &&
+        reviewChecklist['git_progression_status'] !== 'ai_code' &&
+        reviewChecklist['git_progression_status'] !== 'deflate')
+    ) {
       points.push('- Git Commit Progression: Zero progress or broken git history');
     } else if (reviewChecklist['git_progression_status'] === 'deflate') {
       points.push('- Git Commit Progression: Low incremental progress');
@@ -432,13 +534,15 @@ export const VerdictDeskStage: React.FC<VerdictDeskStageProps> = ({
       ? 'suspicious'
       : undefined);
 
-  const currentGitStatus: 'pass' | 'deflate' | 'ai_dump' | 'fail' | undefined =
-    reviewChecklist['git_progression_status'] ||
-    (reviewChecklist['commits_diffs'] === true
-      ? 'pass'
-      : reviewChecklist['commits_diffs'] === false
-      ? 'fail'
-      : undefined);
+  const currentGitStatus: 'pass' | 'deflate' | 'code_dump' | 'ai_code' | 'fail' | undefined =
+    reviewChecklist['git_progression_status'] === 'ai_dump'
+      ? 'ai_code'
+      : reviewChecklist['git_progression_status'] ||
+        (reviewChecklist['commits_diffs'] === true
+          ? 'pass'
+          : reviewChecklist['commits_diffs'] === false
+          ? 'fail'
+          : undefined);
 
   const handleReadmeChange = (val: 'pass' | 'ai_generated' | 'low_quality' | 'fail') => {
     onToggleChecklist?.('shipped_readme_status', val);
@@ -448,7 +552,7 @@ export const VerdictDeskStage: React.FC<VerdictDeskStageProps> = ({
       onToggleChecklist?.('shipped_readme_valid', true);
       onToggleChecklist?.('flag_ai_generated', true);
     } else if (val === 'low_quality') {
-      onToggleChecklist?.('shipped_readme_valid', false);
+      onToggleChecklist?.('shipped_readme_valid', true);
     } else if (val === 'fail') {
       onToggleChecklist?.('shipped_readme_valid', false);
     }
@@ -480,7 +584,7 @@ export const VerdictDeskStage: React.FC<VerdictDeskStageProps> = ({
     }
   };
 
-  const handleGitProgressionChange = (val: 'pass' | 'deflate' | 'ai_dump' | 'fail') => {
+  const handleGitProgressionChange = (val: 'pass' | 'deflate' | 'code_dump' | 'ai_code' | 'fail') => {
     onToggleChecklist?.('git_progression_status', val);
     if (val === 'pass') {
       onToggleChecklist?.('commits_diffs', true);
@@ -489,7 +593,11 @@ export const VerdictDeskStage: React.FC<VerdictDeskStageProps> = ({
       onToggleChecklist?.('commits_diffs', true);
       onToggleChecklist?.('git_progression_verified', true);
       onToggleChecklist?.('flag_deflation_needed', true);
-    } else if (val === 'ai_dump') {
+    } else if (val === 'code_dump') {
+      onToggleChecklist?.('commits_diffs', true);
+      onToggleChecklist?.('git_progression_verified', true);
+      onToggleChecklist?.('flag_monolithic_dump', true);
+    } else if (val === 'ai_code') {
       onToggleChecklist?.('commits_diffs', true);
       onToggleChecklist?.('git_progression_verified', true);
       onToggleChecklist?.('flag_ai_generated', true);
@@ -590,7 +698,7 @@ export const VerdictDeskStage: React.FC<VerdictDeskStageProps> = ({
     // Hackatime ID
     lines.push(`Hackatime ID: ${project.hackatimeId || project.id || 'N/A'}`);
 
-    // Experience
+    // Experience (only output if calibrated)
     const expMap: Record<string, string> = {
       beginner: 'Beginner',
       intermediate: 'Intermediate',
@@ -598,8 +706,10 @@ export const VerdictDeskStage: React.FC<VerdictDeskStageProps> = ({
       highly_experienced: 'Highly Experienced / Pro',
     };
     const currentExp = reviewChecklist['submitter_experience_level'];
-    const expText = currentExp ? (expMap[currentExp] || currentExp) : 'Uncalibrated';
-    lines.push(`Experience: ${expText}`);
+    if (currentExp && currentExp.toLowerCase() !== 'uncalibrated') {
+      const expText = expMap[currentExp] || currentExp;
+      lines.push(`Experience: ${expText}`);
+    }
 
     // Shipped: Yes (if all the checklists related to shipped are pass, else reason)
     const shippedFailures: string[] = [];
@@ -608,12 +718,14 @@ export const VerdictDeskStage: React.FC<VerdictDeskStageProps> = ({
     if (reviewChecklist['shipped_desc_valid'] === false) shippedFailures.push('Missing description');
     if (reviewChecklist['shipped_screenshot_valid'] === false) shippedFailures.push('Missing deliverable screenshot');
 
-    if (reviewChecklist['shipped_readme_status'] === 'fail' || reviewChecklist['shipped_readme_valid'] === false) {
+    // Only failed status counts as missing README
+    if (
+      reviewChecklist['shipped_readme_status'] === 'fail' ||
+      (reviewChecklist['shipped_readme_valid'] === false &&
+        reviewChecklist['shipped_readme_status'] !== 'low_quality' &&
+        reviewChecklist['shipped_readme_status'] !== 'ai_generated')
+    ) {
       shippedFailures.push('Missing README');
-    } else if (reviewChecklist['shipped_readme_status'] === 'low_quality') {
-      shippedFailures.push('Low quality README');
-    } else if (reviewChecklist['shipped_readme_status'] === 'ai_generated') {
-      shippedFailures.push('AI-generated boilerplate README');
     }
 
     if (reviewChecklist['shipped_playable_status'] === 'disallowed_host' || reviewChecklist['shipped_host_compliant'] === false) {
@@ -627,7 +739,22 @@ export const VerdictDeskStage: React.FC<VerdictDeskStageProps> = ({
     }
 
     if (shippedFailures.length === 0) {
-      lines.push('Shipped: Yes');
+      const isLowQuality = reviewChecklist['shipped_readme_status'] === 'low_quality';
+      const isAiReadme = reviewChecklist['shipped_readme_status'] === 'ai_generated';
+      const customReadmeNote = reviewChecklist['note_shipped_readme']?.trim();
+
+      if (customReadmeNote) {
+        const noteText = customReadmeNote.toLowerCase().includes('readme')
+          ? customReadmeNote
+          : `${isLowQuality ? 'low quality ' : isAiReadme ? 'AI-generated ' : ''}README: ${customReadmeNote}`;
+        lines.push(`Shipped: Yes (${noteText})`);
+      } else if (isLowQuality) {
+        lines.push('Shipped: Yes (low quality README)');
+      } else if (isAiReadme) {
+        lines.push('Shipped: Yes (AI-generated README)');
+      } else {
+        lines.push('Shipped: Yes');
+      }
     } else {
       lines.push(`Shipped: No (${shippedFailures.join(', ')})`);
     }
@@ -667,6 +794,50 @@ export const VerdictDeskStage: React.FC<VerdictDeskStageProps> = ({
     toast.success('Complete Review Summary copied to clipboard!');
     setTimeout(() => setLedgerCopied(false), 2500);
   };
+
+  const isPrereviewed =
+    project.cockpitStatus === 'pre_approved' ||
+    project.cockpitStatus === 'completed_pre_approved' ||
+    project.cockpitStatus === 'approved' ||
+    project.cockpitStatus === 'rejected' ||
+    project.cockpitStatus === 'flagged_fraud' ||
+    Boolean(project.cockpitVerdict) ||
+    Boolean(verdict) ||
+    isReadOnly;
+
+  const renderLedgerCard = () => (
+    <div className="p-6 rounded-2xl bg-[#121214] border border-[#27272a] text-white space-y-4 shadow-xl shrink-0">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#27272a]">
+        <div className="flex items-center gap-2">
+          <Copy className="w-4 h-4 text-brand-orange" />
+          <h3 className="text-xs font-bold uppercase tracking-wider text-white">
+            Permanent Review Summary & Dispatch Ledger
+          </h3>
+          {isPrereviewed && (
+            <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+              Prereviewed Ready
+            </span>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={copyFullLedger}
+          className="px-4 py-2 rounded-xl bg-brand-orange text-white hover:bg-brand-orange/90 font-bold text-xs flex items-center gap-2 transition-all shadow-md cursor-pointer"
+        >
+          {ledgerCopied ? <Check className="w-4 h-4 text-white" /> : <Copy className="w-4 h-4 text-white" />}
+          <span>{ledgerCopied ? 'Copied to Clipboard!' : 'Copy Complete Review Summary to Clipboard'}</span>
+        </button>
+      </div>
+      <p className="text-[11px] text-[#a1a1aa]">
+        Human-readable ledger containing project identity, Hackatime ID, all checklist decisions, internal justification, public submitter feedback, and reviewer notes. Always available for 1-click dispatch to Slack or external airtables.
+      </p>
+      <div className="relative">
+        <pre className="p-4 rounded-xl bg-[#09090b] border border-[#27272a] text-[11px] font-mono text-[#a1a1aa] whitespace-pre-wrap overflow-x-auto max-h-96 overflow-y-auto leading-relaxed select-all">
+          {generateHumanReadableLedger()}
+        </pre>
+      </div>
+    </div>
+  );
 
   return (
     <div className="h-full overflow-y-auto p-8 space-y-6 max-w-5xl mx-auto select-text flex flex-col">
@@ -723,6 +894,9 @@ export const VerdictDeskStage: React.FC<VerdictDeskStageProps> = ({
         </div>
       </div>
 
+      {/* If already prereviewed, place the copy-paste card at the very top */}
+      {isPrereviewed && renderLedgerCard()}
+
       {/* SECTION 1: Comprehensive Interactive Review Checklist Desk */}
       <div className="p-6 rounded-2xl bg-[#121214] border border-[#27272a] text-white space-y-6 shadow-xl shrink-0">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#27272a] pb-4">
@@ -760,17 +934,33 @@ export const VerdictDeskStage: React.FC<VerdictDeskStageProps> = ({
             <div className="grid grid-cols-1 gap-2">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-xl bg-[#18181b] border border-[#27272a]">
                 <div className="space-y-0.5 min-w-0">
-                  <span className="text-xs font-semibold text-white block">Halceon Cross-YSWS Ships & Archives Inspected</span>
+                  <span className="text-xs font-semibold text-white block">Cross-Program Double-Dipping & Prior Ships</span>
                   <span className="text-[11px] text-[#71717a]">
-                    Verified submitter track record across Arcade, High Seas, Blot, and Stardance
+                    Verified no duplicate re-submission from Arcade, High Seas, Blot, etc.
                   </span>
                 </div>
                 <div className="shrink-0">
                   <PassFailControl
-                    label="Halceon"
-                    status={reviewChecklist['stage1_halceon_reviewed']}
-                    onPass={() => onToggleChecklist?.('stage1_halceon_reviewed', true)}
-                    onFail={() => onToggleChecklist?.('stage1_halceon_reviewed', false)}
+                    label="Double-Dip"
+                    status={reviewChecklist['stage1_double_dip_checked']}
+                    onPass={() => {
+                      onToggleChecklist?.('stage1_double_dip_checked', true);
+                      onToggleChecklist?.('stage1_halceon_reviewed', true);
+                    }}
+                    onFail={() => {
+                      onToggleChecklist?.('stage1_double_dip_checked', false);
+                      onToggleChecklist?.('stage1_halceon_reviewed', false);
+                      const prog =
+                        reviewChecklist['double_dipped_program'] ||
+                        (project.archiveUrl?.includes('high-seas') ? 'High Seas' :
+                         project.archiveUrl?.includes('arcade') ? 'Arcade' :
+                         project.archiveUrl?.includes('blot') ? 'Blot' :
+                         project.archiveUrl?.includes('stardance') ? 'Stardance' :
+                         project.archiveUrl?.includes('sprig') ? 'Sprig' : undefined);
+                      if (prog) {
+                        onToggleChecklist?.('double_dipped_program', prog);
+                      }
+                    }}
                   />
                 </div>
               </div>
@@ -1003,9 +1193,21 @@ export const VerdictDeskStage: React.FC<VerdictDeskStageProps> = ({
                 <div className="shrink-0">
                   <PassFailControl
                     label="Progression"
-                    status={reviewChecklist['stage1_double_dip_checked']}
-                    onPass={() => onToggleChecklist?.('stage1_double_dip_checked', true)}
-                    onFail={() => onToggleChecklist?.('stage1_double_dip_checked', false)}
+                    status={
+                      reviewChecklist['archive_progression_verified'] !== undefined
+                        ? reviewChecklist['archive_progression_verified']
+                        : undefined
+                    }
+                    onPass={() => {
+                      onToggleChecklist?.('archive_progression_verified', true);
+                      if (archiveShort) onToggleChecklist?.('archive_short_hash', archiveShort);
+                      if (currentShort) onToggleChecklist?.('current_short_hash', currentShort);
+                    }}
+                    onFail={() => {
+                      onToggleChecklist?.('archive_progression_verified', false);
+                      if (archiveShort) onToggleChecklist?.('archive_short_hash', archiveShort);
+                      if (currentShort) onToggleChecklist?.('current_short_hash', currentShort);
+                    }}
                   />
                 </div>
               </div>
@@ -1019,7 +1221,7 @@ export const VerdictDeskStage: React.FC<VerdictDeskStageProps> = ({
                     </span>
                   </div>
                   <div className="shrink-0">
-                    <MultiOptionSelector<'pass' | 'deflate' | 'ai_dump' | 'fail'>
+                    <MultiOptionSelector<'pass' | 'deflate' | 'code_dump' | 'ai_code' | 'fail'>
                       value={currentGitStatus}
                       onChange={handleGitProgressionChange}
                       options={VERDICT_GIT_OPTIONS}
@@ -1643,33 +1845,8 @@ export const VerdictDeskStage: React.FC<VerdictDeskStageProps> = ({
         </div>
       </div>
 
-      {/* SECTION 5: Permanent Dispatch Ledger & Clipboard Export */}
-      <div className="p-6 rounded-2xl bg-[#121214] border border-[#27272a] text-white space-y-4 shadow-xl shrink-0">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#27272a]">
-          <div className="flex items-center gap-2">
-            <Copy className="w-4 h-4 text-brand-orange" />
-            <h3 className="text-xs font-bold uppercase tracking-wider text-white">
-              Permanent Review Summary & Dispatch Ledger
-            </h3>
-          </div>
-          <button
-            type="button"
-            onClick={copyFullLedger}
-            className="px-4 py-2 rounded-xl bg-brand-orange text-white hover:bg-brand-orange/90 font-bold text-xs flex items-center gap-2 transition-all shadow-md cursor-pointer"
-          >
-            {ledgerCopied ? <Check className="w-4 h-4 text-white" /> : <Copy className="w-4 h-4 text-white" />}
-            <span>{ledgerCopied ? 'Copied to Clipboard!' : 'Copy Complete Review Summary to Clipboard'}</span>
-          </button>
-        </div>
-        <p className="text-[11px] text-[#a1a1aa]">
-          Human-readable ledger containing project identity, Hackatime ID, all checklist decisions, internal justification, public submitter feedback, and reviewer notes. Always available for 1-click dispatch to Slack or external airtables.
-        </p>
-        <div className="relative">
-          <pre className="p-4 rounded-xl bg-[#09090b] border border-[#27272a] text-[11px] font-mono text-[#a1a1aa] whitespace-pre-wrap overflow-x-auto max-h-96 overflow-y-auto leading-relaxed select-all">
-            {generateHumanReadableLedger()}
-          </pre>
-        </div>
-      </div>
+      {/* SECTION 5: Permanent Dispatch Ledger & Clipboard Export (when not prereviewed) */}
+      {!isPrereviewed && renderLedgerCard()}
     </div>
   );
 };

@@ -13,6 +13,7 @@ import {
 import { toast } from 'sonner';
 import { saveProjectNote } from '../lib/api';
 import { AuditLogEntry, CockpitProject } from '../lib/types';
+import { decodeHtmlEntities } from '../lib/utils';
 
 interface LeftSidebarProps {
   project: CockpitProject;
@@ -125,6 +126,17 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
             {project.submittedHours} hrs
           </span>
         </div>
+
+        {project.description?.trim() && (
+          <div>
+            <span className="text-[11px] font-semibold text-rv-muted uppercase tracking-wider block mb-1">
+              Description
+            </span>
+            <div className="p-2 rounded bg-rv-bg border border-rv-border text-[11px] text-rv-dim max-h-32 overflow-y-auto leading-relaxed whitespace-pre-wrap select-text">
+              {decodeHtmlEntities(project.description.trim())}
+            </div>
+          </div>
+        )}
 
         {project.hackatimeProjects && (
           <div>

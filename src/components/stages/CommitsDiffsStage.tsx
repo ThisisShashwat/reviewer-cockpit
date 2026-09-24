@@ -80,6 +80,11 @@ export const CommitsDiffsStage: React.FC<CommitsDiffsStageProps> = ({
   const repoFiles = gitHubData?.files || [];
   const isRateLimited = Boolean(gitHubData?.isRateLimited);
 
+  const cleanRepoUrl = useMemo(() => {
+    if (!project.codeUrl) return '';
+    return project.codeUrl.replace(/\/tree\/[^/]+.*$/, '').replace(/\/$/, '');
+  }, [project.codeUrl]);
+
   // Baseline Archive Commit index in current commit history
   const baselineIndex = useMemo(() => {
     if (!baselineArchiveCommit) return -1;
@@ -91,6 +96,23 @@ export const CommitsDiffsStage: React.FC<CommitsDiffsStageProps> = ({
   }, [rawCommits, baselineArchiveCommit]);
 
   const isHeadIdenticalToBaseline = baselineIndex === 0;
+
+  // Auto-sync baseline archive commit and current HEAD commit to reviewChecklist
+  useEffect(() => {
+    if (baselineArchiveCommit?.shortHash && reviewChecklist['archive_short_hash'] !== baselineArchiveCommit.shortHash) {
+      onToggleChecklist?.('archive_short_hash', baselineArchiveCommit.shortHash);
+      if (baselineArchiveCommit.commitHash) {
+        onToggleChecklist?.('archive_commit_hash', baselineArchiveCommit.commitHash);
+      }
+    }
+    if (rawCommits[0]?.sha) {
+      const curShort = rawCommits[0].sha.slice(0, 7);
+      if (reviewChecklist['current_short_hash'] !== curShort) {
+        onToggleChecklist?.('current_short_hash', curShort);
+        onToggleChecklist?.('current_commit_hash', rawCommits[0].sha);
+      }
+    }
+  }, [baselineArchiveCommit, rawCommits, reviewChecklist, onToggleChecklist]);
 
   // Classify each commit & compute pure code additions (excluding lockfiles & assets)
   const classifiedCommits: ClassifiedCommit[] = useMemo(() => {
@@ -444,7 +466,7 @@ export const CommitsDiffsStage: React.FC<CommitsDiffsStageProps> = ({
     };
   }, [repoFiles, classifiedCommits, purgedFiles]);
 
-  type GitProgressionStatus = 'pass' | 'deflate' | 'ai_dump' | 'fail';
+  type GitProgressionStatus = 'pass' | 'deflate' | 'code_dump' | 'ai_code' | 'ai_dump' | 'fail';
 
   const GIT_PROGRESSION_OPTIONS: SelectorOption<GitProgressionStatus>[] = [
     {
@@ -462,11 +484,18 @@ export const CommitsDiffsStage: React.FC<CommitsDiffsStageProps> = ({
       description: 'Low incremental progress, boilerplate imports, or repeated code requiring hours deflation',
     },
     {
-      id: 'ai_dump',
-      label: 'AI / Code Dump',
+      id: 'code_dump',
+      label: 'Code Dump',
+      color: 'amber',
+      icon: Layers,
+      description: 'Single monolithic commit or bulk codebase dump without iterative progression',
+    },
+    {
+      id: 'ai_code',
+      label: 'AI Code',
       color: 'purple',
       icon: Bot,
-      description: 'Single monolithic commit or unedited LLM vibe-code dump',
+      description: 'AI-generated code, LLM vibe coding, or uninspected prompt dumps',
     },
     {
       id: 'fail',
@@ -478,9 +507,11 @@ export const CommitsDiffsStage: React.FC<CommitsDiffsStageProps> = ({
   ];
 
   const currentGitStatus: GitProgressionStatus | undefined =
-    reviewChecklist['git_progression_status'] ||
-    (reviewChecklist['commits_diffs'] === true ? 'pass' :
-     reviewChecklist['commits_diffs'] === false ? 'fail' : undefined);
+    reviewChecklist['git_progression_status'] === 'ai_dump'
+      ? 'ai_code'
+      : reviewChecklist['git_progression_status'] ||
+        (reviewChecklist['commits_diffs'] === true ? 'pass' :
+         reviewChecklist['commits_diffs'] === false ? 'fail' : undefined);
 
   const handleGitProgressionChange = (val: GitProgressionStatus) => {
     onToggleChecklist?.('git_progression_status', val);
@@ -491,7 +522,11 @@ export const CommitsDiffsStage: React.FC<CommitsDiffsStageProps> = ({
       onToggleChecklist?.('commits_diffs', true);
       onToggleChecklist?.('git_progression_verified', true);
       onToggleChecklist?.('flag_deflation_needed', true);
-    } else if (val === 'ai_dump') {
+    } else if (val === 'code_dump') {
+      onToggleChecklist?.('commits_diffs', true);
+      onToggleChecklist?.('git_progression_verified', true);
+      onToggleChecklist?.('flag_monolithic_dump', true);
+    } else if (val === 'ai_code' || val === 'ai_dump') {
       onToggleChecklist?.('commits_diffs', true);
       onToggleChecklist?.('git_progression_verified', true);
       onToggleChecklist?.('flag_ai_generated', true);
@@ -612,11 +647,25 @@ export const CommitsDiffsStage: React.FC<CommitsDiffsStageProps> = ({
               {onEarlyExit && (
                 <button
                   type="button"
-                  onClick={() =>
-                    onEarlyExit(
+                  onClick={() => {
+                    onToggleChecklist?.('archive_progression_verified', false);
+                    onToggleChecklist?.('stage1_double_dip_checked', false);
+                    onToggleChecklist?.('zero_progress_blocked', true);
+                    if (baselineArchiveCommit?.shortHash) {
+                      onToggleChecklist?.('archive_short_hash', baselineArchiveCommit.shortHash);
+                      onToggleChecklist?.('archive_commit_hash', baselineArchiveCommit.commitHash);
+                    }
+                    if (baselineArchiveCommit?.program) {
+                      onToggleChecklist?.('double_dipped_program', baselineArchiveCommit.program);
+                    }
+                    if (rawCommits[0]?.sha) {
+                      onToggleChecklist?.('current_short_hash', rawCommits[0].sha.slice(0, 7));
+                      onToggleChecklist?.('current_commit_hash', rawCommits[0].sha);
+                    }
+                    onEarlyExit?.(
                       `Double-Dip Zero Progress: Current repo HEAD is identical to previously approved archive commit (${baselineArchiveCommit.shortHash})`
-                    )
-                  }
+                    );
+                  }}
                   className="px-4 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold shrink-0 shadow-md transition-colors cursor-pointer"
                 >
                   Reject for Zero Progress
@@ -1135,6 +1184,20 @@ export const CommitsDiffsStage: React.FC<CommitsDiffsStageProps> = ({
                   </button>
                 )}
 
+                {/* View on GitHub Button (opens latest file on default branch, not tied to any commit) */}
+                {cleanRepoUrl && (
+                  <a
+                    href={`${cleanRepoUrl}/blob/${gitHubData?.defaultBranch || 'HEAD'}/${selectedFileMetric.filename.split('/').map(encodeURIComponent).join('/')}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="px-2.5 py-1 rounded bg-[#27272a] hover:bg-[#3f3f46] text-white hover:text-brand-orange text-xs font-mono transition-colors flex items-center gap-1.5 cursor-pointer border border-[#3f3f46] shadow-sm"
+                    title={`View ${selectedFileMetric.filename} on GitHub (${gitHubData?.defaultBranch || 'default'} branch)`}
+                  >
+                    <ExternalLink className="w-3.5 h-3.5 text-brand-orange" />
+                    <span>View on GitHub</span>
+                  </a>
+                )}
+
                 <button
                   type="button"
                   onClick={() => {
@@ -1364,6 +1427,18 @@ export const CommitsDiffsStage: React.FC<CommitsDiffsStageProps> = ({
                       <div className="flex items-center gap-2">
                         <FileCode className="w-3.5 h-3.5 text-[#71717a] shrink-0" />
                         <span className="truncate">{file.filename}</span>
+                        {cleanRepoUrl && (
+                          <a
+                            href={`${cleanRepoUrl}/blob/${gitHubData?.defaultBranch || 'HEAD'}/${file.filename.split('/').map(encodeURIComponent).join('/')}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="text-[#71717a] hover:text-brand-orange ml-auto shrink-0 p-0.5 transition-colors"
+                            title={`View ${file.filename} on GitHub`}
+                          >
+                            <ExternalLink className="w-3 h-3" />
+                          </a>
+                        )}
                       </div>
                     </td>
                     <td className="py-2.5">
@@ -1412,9 +1487,36 @@ export const CommitsDiffsStage: React.FC<CommitsDiffsStageProps> = ({
           <div className="shrink-0">
             <PassFailControl
               label="Progression"
-              status={reviewChecklist['stage1_double_dip_checked']}
-              onPass={() => onToggleChecklist?.('stage1_double_dip_checked', true)}
-              onFail={() => onToggleChecklist?.('stage1_double_dip_checked', false)}
+              status={
+                reviewChecklist['archive_progression_verified'] !== undefined
+                  ? reviewChecklist['archive_progression_verified']
+                  : undefined
+              }
+              onPass={() => {
+                onToggleChecklist?.('archive_progression_verified', true);
+                if (baselineArchiveCommit?.shortHash) {
+                  onToggleChecklist?.('archive_short_hash', baselineArchiveCommit.shortHash);
+                  onToggleChecklist?.('archive_commit_hash', baselineArchiveCommit.commitHash);
+                }
+                if (rawCommits[0]?.sha) {
+                  onToggleChecklist?.('current_short_hash', rawCommits[0].sha.slice(0, 7));
+                  onToggleChecklist?.('current_commit_hash', rawCommits[0].sha);
+                }
+              }}
+              onFail={() => {
+                onToggleChecklist?.('archive_progression_verified', false);
+                if (baselineArchiveCommit?.shortHash) {
+                  onToggleChecklist?.('archive_short_hash', baselineArchiveCommit.shortHash);
+                  onToggleChecklist?.('archive_commit_hash', baselineArchiveCommit.commitHash);
+                }
+                if (baselineArchiveCommit?.program) {
+                  onToggleChecklist?.('double_dipped_program', baselineArchiveCommit.program);
+                }
+                if (rawCommits[0]?.sha) {
+                  onToggleChecklist?.('current_short_hash', rawCommits[0].sha.slice(0, 7));
+                  onToggleChecklist?.('current_commit_hash', rawCommits[0].sha);
+                }
+              }}
             />
           </div>
         </div>
@@ -1526,10 +1628,15 @@ export const CommitsDiffsStage: React.FC<CommitsDiffsStageProps> = ({
               <AlertTriangle className="w-4 h-4" />
               <span>Pass with Hours Deflation</span>
             </span>
-          ) : currentGitStatus === 'ai_dump' ? (
+          ) : currentGitStatus === 'code_dump' ? (
+            <span className="text-amber-400 font-semibold flex items-center gap-1.5">
+              <Layers className="w-4 h-4" />
+              <span>Flagged as Code Dump</span>
+            </span>
+          ) : currentGitStatus === 'ai_code' || currentGitStatus === 'ai_dump' ? (
             <span className="text-purple-400 font-semibold flex items-center gap-1.5">
               <Bot className="w-4 h-4" />
-              <span>Flagged as AI / Code Dump</span>
+              <span>Flagged as AI Code</span>
             </span>
           ) : currentGitStatus === 'fail' ? (
             <span className="text-rose-400 font-semibold flex items-center gap-1.5">
