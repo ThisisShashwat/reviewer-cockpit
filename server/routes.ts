@@ -304,12 +304,53 @@ apiRouter.post("/sync/projects", async (req, res) => {
       }
     }
 
+    // Reconcile pending projects on full 4-tab sync:
+    // If a project is pending in Cockpit without a verdict, but no longer in Live's pending tab
+    const isFullSync = Boolean(req.body && (req.body.fullSync || req.body.syncAllTabs));
+    let reconciledCount = 0;
+    if (isFullSync) {
+      const incomingIds = new Set(rawItems.map(r => String(r.id || r.fields?.id || "").trim()).filter(Boolean));
+      const livePendingIds = new Set(
+        rawItems
+          .filter(r => {
+            const q = String(r.queue || r.status || "").toLowerCase().trim();
+            return q === "pending" || (!q && !r.approved && r.reviewStatus !== "Rejected" && r.reviewStatus !== "Fraud");
+          })
+          .map(r => String(r.id || r.fields?.id || "").trim())
+          .filter(Boolean)
+      );
+
+      for (const p of storage.getAllProjects()) {
+        if (p.cockpitStatus === "pending" && !p.cockpitVerdict) {
+          if (!livePendingIds.has(p.id)) {
+            // Project was not in live pending, and wasn't in any other tab (withdrawn/deleted)
+            if (!incomingIds.has(p.id)) {
+              p.cockpitStatus = "completed_pre_approved";
+              p.updatedAt = new Date().toISOString();
+              await storage.saveProject(p);
+              await logProjectUpdated(
+                p,
+                [{ field: "cockpitStatus", oldValue: "pending", newValue: "completed_pre_approved" }],
+                "live_sync_withdrawn_reconcile"
+              );
+              reconciledCount++;
+            }
+          }
+        }
+      }
+      if (reconciledCount > 0) {
+        console.log(`[POST /api/sync/projects] Reconciled ${reconciledCount} projects removed/withdrawn from Live pending.`);
+      }
+    }
+
     res.json({
       ok: true,
       processed: rawItems.length,
       created: createdCount,
       updated: updatedCount,
+      reconciled: reconciledCount,
       unchanged: unchangedCount,
+      stats: storage.getStats(),
       timestamp: new Date().toISOString(),
     });
   } catch (err: any) {

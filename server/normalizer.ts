@@ -294,24 +294,25 @@ export function normalizeLiveSubmission(
   const projectType: ProjectType =
     String(rawType).toLowerCase().trim() === "hardware" ? "hardware" : "software";
 
-  // Determine cockpitStatus
-  let cockpitStatus: CockpitStatus = existing?.cockpitStatus || "pending";
-  if (!existing) {
-    const rawQueue = String((raw as any).queue || (raw as any).status || "").toLowerCase().trim();
-    if (rawQueue === "approved" || liveApproved || liveReviewerVerdict === "Approve") {
-      cockpitStatus = "approved";
-    } else if (rawQueue === "rejected" || liveReviewStatus === "Rejected" || liveReviewerVerdict === "Reject") {
-      cockpitStatus = "rejected";
-    } else if (rawQueue === "fraud" || liveReviewStatus === "Fraud") {
-      cockpitStatus = "flagged_fraud";
-    } else if (rawQueue === "pre_approved") {
-      cockpitStatus = "pre_approved";
-    } else if (rawQueue === "completed_pre_approved") {
-      cockpitStatus = "completed_pre_approved";
-    } else {
-      cockpitStatus = "pending";
-    }
+  // Determine incoming live status
+  const rawQueue = String((raw as any).queue || (raw as any).status || "").toLowerCase().trim();
+  let incomingStatus: CockpitStatus = "pending";
+  if (rawQueue === "approved" || liveApproved || liveReviewerVerdict === "Approve") {
+    incomingStatus = "approved";
+  } else if (rawQueue === "rejected" || liveReviewStatus === "Rejected" || liveReviewerVerdict === "Reject") {
+    incomingStatus = "rejected";
+  } else if (rawQueue === "fraud" || liveReviewStatus === "Fraud") {
+    incomingStatus = "flagged_fraud";
+  } else if (rawQueue === "pre_approved") {
+    incomingStatus = "pre_approved";
+  } else if (rawQueue === "completed_pre_approved") {
+    incomingStatus = "completed_pre_approved";
+  } else {
+    incomingStatus = "pending";
   }
+
+  // Preserve local reviewer decision if a verdict was already recorded
+  const cockpitStatus: CockpitStatus = existing?.cockpitVerdict ? existing.cockpitStatus : incomingStatus;
 
   const now = new Date().toISOString();
 

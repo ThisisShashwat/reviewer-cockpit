@@ -15,6 +15,7 @@ const MONITORED_FIELDS: Array<keyof CockpitProject> = [
   "liveReviewerVerdict",
   "liveReviewerJustification",
   "liveReviewerHours",
+  "cockpitStatus",
 ];
 
 function areValuesEqual(a: any, b: any): boolean {

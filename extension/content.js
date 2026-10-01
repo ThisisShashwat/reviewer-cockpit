@@ -25,6 +25,32 @@
 
   const HW_REGEX = new RegExp('\\b(' + HW_KEYWORDS.map(kw => kw.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')).join('|') + ')\\b', 'i');
 
+  // 4 review tabs configuration
+  const REVIEW_TABS = [
+    { key: 'pending', label: 'Pending', path: '/review?status=Pending' },
+    { key: 'approved', label: 'Approved', path: '/review?status=Approved' },
+    { key: 'rejected', label: 'Rejected', path: '/review?status=Rejected' },
+    { key: 'fraud', label: 'Fraud', path: '/review?status=Fraud' }
+  ];
+
+  /**
+   * Determine the current review queue based on window URL
+   */
+  function getCurrentTabKey() {
+    try {
+      const url = new URL(window.location.href);
+      const statusParam = url.searchParams.get('status');
+      if (!statusParam) return 'pending';
+      const s = statusParam.toLowerCase();
+      if (s === 'approved') return 'approved';
+      if (s === 'rejected') return 'rejected';
+      if (s === 'fraud') return 'fraud';
+      return 'pending';
+    } catch (_) {
+      return 'pending';
+    }
+  }
+
   // Cache Next.js hydration data if present in page scripts
   let pageHydrationRows = null;
   const rowsByCodeUrl = new Map();
@@ -32,7 +58,67 @@
   let hasScannedHydration = false;
 
   /**
-   * Scan Next.js hydration data exactly once without catastrophic regex backtracking
+   * Scan Next.js hydration payload from text or script content
+   * without catastrophic regex backtracking
+   */
+  function extractHydrationRowsFromHtml(text) {
+    if (!text || typeof text !== 'string') return null;
+
+    let searchPos = 0;
+    while (searchPos < text.length) {
+      let idx = text.indexOf('"rows":[', searchPos);
+      let isEscaped = false;
+      let marker = '"rows":[';
+
+      const escapedIdx = text.indexOf('\\"rows\\":[', searchPos);
+      if (idx === -1 || (escapedIdx !== -1 && escapedIdx < idx)) {
+        if (escapedIdx !== -1) {
+          idx = escapedIdx;
+          isEscaped = true;
+          marker = '\\"rows\\":[';
+        }
+      }
+
+      if (idx === -1) break;
+
+      const start = idx + marker.length - 1; // index of '['
+      let depth = 0;
+      let end = -1;
+
+      for (let i = start; i < text.length; i++) {
+        if (text[i] === '[') depth++;
+        else if (text[i] === ']') {
+          depth--;
+          if (depth === 0) {
+            end = i + 1;
+            break;
+          }
+        }
+      }
+
+      if (end !== -1) {
+        let rowsJson = text.substring(start, end);
+        if (isEscaped) {
+          rowsJson = rowsJson.replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+        }
+        try {
+          const parsed = JSON.parse(rowsJson);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            return parsed;
+          }
+        } catch (_) {
+          // Continue searching if this block was not valid rows array
+        }
+        searchPos = end;
+      } else {
+        searchPos = idx + marker.length;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Scan Next.js hydration data on current page exactly once
    */
   function scanHydrationData() {
     if (hasScannedHydration) return;
@@ -44,53 +130,14 @@
         const text = s.textContent;
         if (!text) continue;
 
-        let idx = text.indexOf('"rows":[');
-        let isEscaped = false;
-
-        if (idx === -1) {
-          idx = text.indexOf('\\"rows\\":[');
-          if (idx !== -1) {
-            isEscaped = true;
+        const rows = extractHydrationRowsFromHtml(text);
+        if (rows && rows.length > 0) {
+          pageHydrationRows = rows;
+          for (const r of pageHydrationRows) {
+            if (r.codeUrl) rowsByCodeUrl.set(String(r.codeUrl).trim().toLowerCase(), r);
+            if (r.hackatimeId) rowsByHackatime.set(String(r.hackatimeId).trim(), r);
           }
-        }
-
-        if (idx === -1) continue;
-
-        const marker = isEscaped ? '\\"rows\\":[' : '"rows":[';
-        const start = idx + marker.length - 1; // index of '['
-
-        let depth = 0;
-        let end = -1;
-        for (let i = start; i < text.length; i++) {
-          if (text[i] === '[') depth++;
-          else if (text[i] === ']') {
-            depth--;
-            if (depth === 0) {
-              end = i + 1;
-              break;
-            }
-          }
-        }
-
-        if (end !== -1) {
-          let rowsJson = text.substring(start, end);
-          if (isEscaped) {
-            rowsJson = rowsJson.replace(/\\"/g, '"').replace(/\\\\/g, '\\');
-          }
-
-          try {
-            const parsed = JSON.parse(rowsJson);
-            if (Array.isArray(parsed) && parsed.length > 0) {
-              pageHydrationRows = parsed;
-              for (const r of pageHydrationRows) {
-                if (r.codeUrl) rowsByCodeUrl.set(String(r.codeUrl).trim().toLowerCase(), r);
-                if (r.hackatimeId) rowsByHackatime.set(String(r.hackatimeId).trim(), r);
-              }
-              break;
-            }
-          } catch (_) {
-            // Ignore parse errors on partial script contents
-          }
+          break;
         }
       }
     } catch (err) {
@@ -147,8 +194,9 @@
   /**
    * Extract fields from a single submission card element
    */
-  function extractFromQueueCard(cardEl) {
+  function extractFromQueueCard(cardEl, tabStatus) {
     scanHydrationData();
+    const currentTab = tabStatus || getCurrentTabKey();
 
     // 1. Code URL & Playable URL
     let codeUrl = null;
@@ -275,43 +323,61 @@
       hackatimeId: hackatimeId || '',
       githubUsername: githubUsername || '',
       projectType: projectType,
-      lapseLinks: lapseLinks || []
+      lapseLinks: lapseLinks || [],
+      queue: currentTab,
+      status: currentTab
+    };
+  }
+
+  /**
+   * Converts a Next.js hydration row object into a normalized Cockpit project
+   */
+  function convertHydrationRowToProject(r, tabStatus) {
+    const codeUrl = String(r.codeUrl || '').trim();
+    const playableUrl = String(r.playableUrl || '').trim();
+    const rawLapse = String(r.lapseLinks || '').trim();
+    const lapseUrls = rawLapse.match(/https?:\/\/[^\s,]+/g) || [];
+    const lapseLinks = lapseUrls.map((u) => u.replace(/[.,;)>]+$/, ''));
+    const ghUser = extractGhUsername(codeUrl, playableUrl, lapseLinks);
+    const projName = r.projectName || extractRepoName(codeUrl) || 'Untitled Project';
+    const hours = typeof r.hours === 'number' ? r.hours : parseFloat(r.hours) || 0;
+    const corpus = [projName, r.description, codeUrl, playableUrl, lapseLinks.join(' ')].join(' ');
+    const queue = tabStatus || getCurrentTabKey();
+
+    return {
+      id: r.id || ('rec_' + Math.abs(hashCode(codeUrl || projName)).toString(36)),
+      projectName: projName,
+      codeUrl: codeUrl,
+      playableUrl: playableUrl,
+      screenshotUrl: r.screenshotUrl || '',
+      description: r.description || '',
+      submittedHours: Number(hours.toFixed(1)),
+      hackatimeId: r.hackatimeId ? String(r.hackatimeId) : '',
+      hackatimeProjects: r.hackatimeProjects ? String(r.hackatimeProjects) : '',
+      githubUsername: ghUser || '',
+      projectType: detectProjectType(corpus),
+      lapseLinks: lapseLinks,
+      approved: Boolean(r.approved),
+      reviewStatus: r.reviewStatus || (
+        queue === 'approved' ? 'Approved' :
+        queue === 'rejected' ? 'Rejected' :
+        queue === 'fraud' ? 'Fraud' : 'Pending'
+      ),
+      queue: queue,
+      status: queue,
     };
   }
 
   /**
    * Extracts all projects on the current page
    */
-  function getAllProjectsFromPage() {
+  function getAllProjectsFromPage(tabStatus) {
     scanHydrationData();
+    const queue = tabStatus || getCurrentTabKey();
 
     // 1. If Next.js hydration rows are available, parse directly
     if (pageHydrationRows && pageHydrationRows.length > 0) {
-      return pageHydrationRows.map((r) => {
-        const codeUrl = String(r.codeUrl || '').trim();
-        const playableUrl = String(r.playableUrl || '').trim();
-        const rawLapse = String(r.lapseLinks || '').trim();
-        const lapseUrls = rawLapse.match(/https?:\/\/[^\s,]+/g) || [];
-        const lapseLinks = lapseUrls.map((u) => u.replace(/[.,;)>]+$/, ''));
-        const ghUser = extractGhUsername(codeUrl, playableUrl, lapseLinks);
-        const projName = r.projectName || extractRepoName(codeUrl) || 'Untitled Project';
-        const hours = typeof r.hours === 'number' ? r.hours : parseFloat(r.hours) || 0;
-        const corpus = [projName, r.description, codeUrl, playableUrl, lapseLinks.join(' ')].join(' ');
-
-        return {
-          id: r.id || ('rec_' + Math.abs(hashCode(codeUrl || projName)).toString(36)),
-          projectName: projName,
-          codeUrl: codeUrl,
-          playableUrl: playableUrl,
-          screenshotUrl: r.screenshotUrl || '',
-          description: r.description || '',
-          submittedHours: Number(hours.toFixed(1)),
-          hackatimeId: r.hackatimeId ? String(r.hackatimeId) : '',
-          githubUsername: ghUser || '',
-          projectType: detectProjectType(corpus),
-          lapseLinks: lapseLinks,
-        };
-      });
+      return pageHydrationRows.map((r) => convertHydrationRowToProject(r, queue));
     }
 
     // 2. DOM fallback
@@ -327,7 +393,7 @@
     const seenIds = new Set();
 
     for (const card of cards) {
-      const p = extractFromQueueCard(card);
+      const p = extractFromQueueCard(card, queue);
       if (p && !seenIds.has(p.id)) {
         seenIds.add(p.id);
         results.push(p);
@@ -335,6 +401,61 @@
     }
 
     return results;
+  }
+
+  /**
+   * Parse projects from fetched HTML of any review tab
+   */
+  function parseProjectsFromHtml(html, tabStatus) {
+    // 1. Try Next.js hydration payload
+    const rows = extractHydrationRowsFromHtml(html);
+    if (rows && rows.length > 0) {
+      return rows.map((r) => convertHydrationRowToProject(r, tabStatus));
+    }
+
+    // 2. Fallback: DOMParser
+    try {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(html, 'text/html');
+      const cards = Array.from(doc.querySelectorAll('.card, [class*="card"]'))
+        .filter((c) => {
+          if (c.closest && (c.closest('#cockpit-top-toolbar') || c.closest('[class*="cockpit-"]'))) {
+            return false;
+          }
+          return c.querySelector('a, img, p');
+        });
+
+      const results = [];
+      const seenIds = new Set();
+      for (const card of cards) {
+        const p = extractFromQueueCard(card, tabStatus);
+        if (p && !seenIds.has(p.id)) {
+          seenIds.add(p.id);
+          results.push(p);
+        }
+      }
+      return results;
+    } catch (err) {
+      console.error(`[Cockpit Ingest] Failed to parse HTML for ${tabStatus}:`, err);
+      return [];
+    }
+  }
+
+  /**
+   * Fetch background HTML for another review tab
+   */
+  async function fetchTabHtml(tabPath) {
+    const url = new URL(tabPath, window.location.origin).href;
+    const res = await fetch(url, {
+      credentials: 'include',
+      headers: {
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+      }
+    });
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status} fetching ${tabPath}`);
+    }
+    return await res.text();
   }
 
   /**
@@ -504,54 +625,9 @@
 
     // Event: Sync All to Cockpit
     const syncBtn = toolbar.querySelector('#cockpit-sync-all-btn');
-    const syncLabel = toolbar.querySelector('#cockpit-sync-btn-label');
     syncBtn.addEventListener('click', async (e) => {
       e.preventDefault();
-      const projects = getAllProjectsFromPage();
-      if (projects.length === 0) {
-        alert('No projects detected on this page yet.');
-        return;
-      }
-
-      const originalText = syncLabel.textContent;
-      syncLabel.textContent = `Syncing ${projects.length}...`;
-
-      const serverUrl = await getStoredServerUrl();
-
-      try {
-        const res = await fetch(`${serverUrl}/api/sync/projects`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(projects),
-        });
-
-        if (!res.ok) {
-          throw new Error(`HTTP ${res.status}`);
-        }
-
-        const data = await res.json();
-        syncBtn.classList.add('cockpit-btn-success');
-        syncLabel.textContent = `✓ Synced ${data.created + data.updated || projects.length} to Cockpit!`;
-
-        setTimeout(() => {
-          syncBtn.classList.remove('cockpit-btn-success');
-          syncLabel.textContent = originalText;
-        }, 3000);
-      } catch (err) {
-        console.warn('[Cockpit Ingest] Direct server sync failed, falling back to clipboard:', err);
-
-        // Fallback: Copy to clipboard so user can paste into Cockpit -> Sync Dump
-        const jsonStr = JSON.stringify(projects, null, 2);
-        await navigator.clipboard.writeText(jsonStr);
-
-        syncBtn.classList.add('cockpit-btn-success');
-        syncLabel.textContent = `📋 Copied ${projects.length} to Clipboard!`;
-
-        setTimeout(() => {
-          syncBtn.classList.remove('cockpit-btn-success');
-          syncLabel.textContent = originalText;
-        }, 3500);
-      }
+      await syncAllTabsToCockpit();
     });
 
     // Event: Copy All JSON
@@ -579,12 +655,172 @@
     });
   }
 
+  let isSyncing = false;
+  let lastSyncedPendingCount = null;
+
+  /**
+   * Performs full 4-tab sync across Pending, Approved, Rejected, and Fraud
+   */
+  async function syncAllTabsToCockpit() {
+    if (isSyncing) return { inProgress: true };
+    isSyncing = true;
+
+    const syncBtn = document.getElementById('cockpit-sync-all-btn');
+    const syncLabel = document.getElementById('cockpit-sync-btn-label');
+    const originalText = syncLabel ? syncLabel.textContent : 'Sync All to Cockpit';
+
+    try {
+      if (syncLabel) {
+        syncLabel.textContent = 'Fetching tabs...';
+      }
+
+      const currentTab = getCurrentTabKey();
+      const isHackClub = window.location.hostname.includes('hackclub.com');
+      const resultsByTab = {
+        pending: [],
+        approved: [],
+        rejected: [],
+        fraud: []
+      };
+
+      if (isHackClub) {
+        // Parallel fetch of other 3 tabs, and local extraction for current tab
+        await Promise.all(
+          REVIEW_TABS.map(async (tab) => {
+            if (tab.key === currentTab) {
+              resultsByTab[tab.key] = getAllProjectsFromPage(currentTab);
+            } else {
+              try {
+                const html = await fetchTabHtml(tab.path);
+                resultsByTab[tab.key] = parseProjectsFromHtml(html, tab.key);
+              } catch (err) {
+                console.warn(`[Cockpit Ingest] Failed to fetch tab ${tab.key}:`, err);
+                resultsByTab[tab.key] = [];
+              }
+            }
+          })
+        );
+      } else {
+        // Non-hackclub (e.g. Airtable)
+        resultsByTab.pending = getAllProjectsFromPage('pending');
+      }
+
+      const tabCounts = {
+        pending: resultsByTab.pending?.length || 0,
+        approved: resultsByTab.approved?.length || 0,
+        rejected: resultsByTab.rejected?.length || 0,
+        fraud: resultsByTab.fraud?.length || 0
+      };
+
+      const allProjects = [
+        ...(resultsByTab.pending || []),
+        ...(resultsByTab.approved || []),
+        ...(resultsByTab.rejected || []),
+        ...(resultsByTab.fraud || [])
+      ];
+
+      if (allProjects.length === 0) {
+        alert('No projects detected across the review tabs.');
+        if (syncLabel) syncLabel.textContent = originalText;
+        return { ok: false, error: 'No projects detected' };
+      }
+
+      if (syncLabel) {
+        syncLabel.textContent = `Syncing 4 tabs (Pending: ${tabCounts.pending})...`;
+      }
+
+      const serverUrl = await getStoredServerUrl();
+      const payload = {
+        projects: allProjects,
+        fullSync: true,
+        tabCounts: tabCounts
+      };
+
+      try {
+        const res = await fetch(`${serverUrl}/api/sync/projects`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`);
+        }
+
+        const resData = await res.json();
+        const pendingCount = resData.stats?.pending ?? tabCounts.pending;
+        lastSyncedPendingCount = pendingCount;
+
+        if (syncBtn && syncLabel) {
+          syncBtn.classList.add('cockpit-btn-success');
+          syncLabel.textContent = `✓ Synced 4 Tabs! (${pendingCount} Pending)`;
+        }
+
+        const badge = document.getElementById('cockpit-tb-count');
+        if (badge) {
+          badge.textContent = `${pendingCount} Pending`;
+        }
+
+        setTimeout(() => {
+          if (syncBtn && syncLabel) {
+            syncBtn.classList.remove('cockpit-btn-success');
+            syncLabel.textContent = originalText;
+          }
+        }, 3500);
+
+        return {
+          ok: true,
+          stats: resData.stats,
+          tabCounts: tabCounts,
+          message: `✓ Synced 4 Tabs! (${pendingCount} Pending)`
+        };
+      } catch (err) {
+        console.warn('[Cockpit Ingest] Direct server sync failed, falling back to clipboard:', err);
+
+        const jsonStr = JSON.stringify(allProjects, null, 2);
+        try {
+          await navigator.clipboard.writeText(jsonStr);
+        } catch (clipErr) {
+          console.error('[Cockpit Ingest] Clipboard error:', clipErr);
+        }
+
+        if (syncBtn && syncLabel) {
+          syncBtn.classList.add('cockpit-btn-success');
+          syncLabel.textContent = '📋 Copied 4 Tabs to Clipboard!';
+        }
+
+        setTimeout(() => {
+          if (syncBtn && syncLabel) {
+            syncBtn.classList.remove('cockpit-btn-success');
+            syncLabel.textContent = originalText;
+          }
+        }, 3500);
+
+        return {
+          ok: false,
+          copied: true,
+          tabCounts: tabCounts,
+          message: '📋 Copied 4 Tabs to Clipboard!'
+        };
+      }
+    } finally {
+      isSyncing = false;
+    }
+  }
+
   function updateBadgeCount() {
     const badge = document.getElementById('cockpit-tb-count');
     if (!badge) return;
 
+    if (lastSyncedPendingCount !== null) {
+      badge.textContent = `${lastSyncedPendingCount} Pending`;
+      return;
+    }
+
     if (pageHydrationRows && pageHydrationRows.length > 0) {
-      badge.textContent = `${pageHydrationRows.length} found`;
+      const currentTab = getCurrentTabKey();
+      const label = currentTab === 'pending' ? 'Pending' : currentTab.charAt(0).toUpperCase() + currentTab.slice(1);
+      badge.textContent = `${pageHydrationRows.length} ${label}`;
     } else {
       const count = document.querySelectorAll('.card, [class*="card"]').length;
       badge.textContent = `${count} found`;
@@ -704,6 +940,18 @@
 
   // Safe fallback polling at 5000ms instead of aggressive 1500ms
   setInterval(debouncedScanAndInject, 5000);
+
+  // Message listener for popup triggers
+  if (typeof chrome !== 'undefined' && chrome.runtime?.onMessage) {
+    chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+      if (request.action === 'SYNC_ALL_4_TABS' || request.action === 'SYNC_ALL') {
+        syncAllTabsToCockpit()
+          .then((result) => sendResponse(result))
+          .catch((err) => sendResponse({ ok: false, error: err.message }));
+        return true; // Keep channel open for async response
+      }
+    });
+  }
 
   console.log('[Cockpit Ingest Helper] Active with Full-Queue Sync & Quick Ingest.');
 })();

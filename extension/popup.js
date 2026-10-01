@@ -58,8 +58,43 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
-  syncBtn.addEventListener('click', () => {
-    triggerInPageAction('cockpit-sync-all-btn');
+  const syncLabel = document.getElementById('sync-label');
+
+  syncBtn.addEventListener('click', async () => {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab?.id) {
+      showStatus('No active tab found', 'error');
+      return;
+    }
+
+    const originalText = syncLabel ? syncLabel.textContent : 'Sync All 4 Tabs to Cockpit';
+    if (syncLabel) syncLabel.textContent = 'Syncing 4 Tabs...';
+    syncBtn.disabled = true;
+
+    try {
+      chrome.tabs.sendMessage(tab.id, { action: 'SYNC_ALL_4_TABS' }, (response) => {
+        syncBtn.disabled = false;
+        if (syncLabel) syncLabel.textContent = originalText;
+
+        if (chrome.runtime.lastError || !response) {
+          // Fallback to trigger in-page button click
+          triggerInPageAction('cockpit-sync-all-btn');
+          return;
+        }
+
+        if (response.ok) {
+          showStatus(response.message || '✓ Synced 4 Tabs to Cockpit!', 'success');
+        } else if (response.copied) {
+          showStatus('📋 Copied 4 Tabs to Clipboard!', 'success');
+        } else {
+          showStatus(response.error || 'Failed to sync tabs', 'error');
+        }
+      });
+    } catch (err) {
+      syncBtn.disabled = false;
+      if (syncLabel) syncLabel.textContent = originalText;
+      triggerInPageAction('cockpit-sync-all-btn');
+    }
   });
 
   copyBtn.addEventListener('click', () => {
@@ -72,6 +107,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     setTimeout(() => {
       statusMsg.textContent = '';
       statusMsg.className = 'status-msg';
-    }, 3000);
+    }, 3500);
   }
 });
