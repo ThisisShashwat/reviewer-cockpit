@@ -1,0 +1,268 @@
+/* Cockpit Quick Ingest Helper Injected Styles */
+
+/* 1. Individual Card Copy Button */
+.cockpit-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background-color: #1e1e24;
+  color: #f3f4f6;
+  border: 1px solid #374151;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  cursor: pointer;
+  transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  user-select: none;
+  z-index: 1000;
+  line-height: 1.4;
+  text-decoration: none;
+}
+
+.cockpit-copy-btn:hover {
+  background-color: #2b2b36;
+  border-color: #f97316;
+  color: #ffffff;
+  box-shadow: 0 2px 6px rgba(249, 115, 22, 0.25);
+  transform: translateY(-1px);
+}
+
+.cockpit-copy-btn:active {
+  transform: translateY(0px) scale(0.97);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+/* Copied Success State */
+.cockpit-copy-btn.cockpit-copied {
+  background-color: #065f46 !important;
+  border-color: #10b981 !important;
+  color: #ecfdf5 !important;
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.4) !important;
+  transform: scale(1.02);
+}
+
+.cockpit-copy-btn .cockpit-icon {
+  font-size: 13px;
+  display: inline-block;
+  line-height: 1;
+}
+
+/* Review Card Positioning */
+.card .cockpit-copy-container {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 6px;
+}
+
+/* Absolute corner placement variant for clean card layouts */
+.cockpit-corner-badge {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 20;
+}
+
+/* Airtable Grid / Row Injected Button */
+.cockpit-airtable-row-btn {
+  margin-left: 8px;
+  padding: 3px 8px;
+  font-size: 11px;
+}
+
+/* 2. Top Floating Sync Toolbar */
+.cockpit-top-toolbar {
+  position: fixed;
+  top: 14px;
+  right: 20px;
+  z-index: 999999;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(18, 18, 24, 0.94);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  padding: 6px 12px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05);
+  color: #f3f4f6;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-size: 12px;
+  user-select: none;
+  animation: cockpitFadeDown 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes cockpitFadeDown {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.cockpit-tb-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-right: 6px;
+  border-right: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.cockpit-tb-brand {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-weight: 700;
+  color: #fff;
+  font-size: 12px;
+}
+
+.cockpit-tb-bolt {
+  color: #f97316;
+  font-size: 14px;
+}
+
+.cockpit-tb-badge {
+  background: rgba(249, 115, 22, 0.16);
+  color: #fb923c;
+  border: 1px solid rgba(249, 115, 22, 0.35);
+  padding: 2px 7px;
+  border-radius: 9999px;
+  font-size: 11px;
+  font-weight: 600;
+  font-mono: monospace;
+}
+
+.cockpit-tb-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cockpit-tb-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 11px;
+  border-radius: 7px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  border: none;
+  line-height: 1.4;
+}
+
+/* Primary Sync Button */
+.cockpit-tb-btn-sync {
+  background: linear-gradient(135deg, #f97316, #ea580c);
+  color: #ffffff;
+  box-shadow: 0 1px 4px rgba(249, 115, 22, 0.3);
+}
+
+.cockpit-tb-btn-sync:hover {
+  background: linear-gradient(135deg, #ea580c, #c2410c);
+  box-shadow: 0 2px 8px rgba(249, 115, 22, 0.45);
+  transform: translateY(-1px);
+}
+
+/* Secondary Copy All Button */
+.cockpit-tb-btn-copy {
+  background: #27272a;
+  color: #e4e4e7;
+  border: 1px solid #3f3f46;
+}
+
+.cockpit-tb-btn-copy:hover {
+  background: #3f3f46;
+  color: #ffffff;
+  border-color: #52525b;
+}
+
+/* Settings Cog */
+.cockpit-tb-btn-settings {
+  background: transparent;
+  color: #a1a1aa;
+  padding: 5px 7px;
+  font-size: 13px;
+  border: 1px solid transparent;
+}
+
+.cockpit-tb-btn-settings:hover {
+  background: #27272a;
+  color: #fff;
+  border-color: #3f3f46;
+}
+
+/* Success States */
+.cockpit-tb-btn.cockpit-btn-success {
+  background: #059669 !important;
+  color: #ecfdf5 !important;
+  border-color: #10b981 !important;
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.4) !important;
+}
+
+/* Settings Dropdown Panel */
+.cockpit-tb-settings-panel {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 8px;
+  width: 280px;
+  background: #18181b;
+  border: 1px solid #27272a;
+  border-radius: 10px;
+  padding: 12px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.6);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cockpit-tb-settings-panel label {
+  font-size: 11px;
+  color: #a1a1aa;
+  font-weight: 500;
+}
+
+.cockpit-tb-input-group {
+  display: flex;
+  gap: 6px;
+}
+
+.cockpit-tb-input-group input {
+  flex: 1;
+  background: #09090b;
+  border: 1px solid #27272a;
+  border-radius: 6px;
+  padding: 5px 8px;
+  color: #f4f4f5;
+  font-size: 11px;
+  font-family: monospace;
+  outline: none;
+}
+
+.cockpit-tb-input-group input:focus {
+  border-color: #f97316;
+}
+
+.cockpit-tb-input-group button {
+  background: #f97316;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.cockpit-tb-input-group button:hover {
+  background: #ea580c;
+}

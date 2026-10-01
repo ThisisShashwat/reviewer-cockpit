@@ -1,8 +1,8 @@
-import React from 'react';
 import {
   ListFilter,
   RefreshCw,
   Upload,
+  Zap,
 } from 'lucide-react';
 import { QueueStats } from '../../lib/types';
 
@@ -14,6 +14,7 @@ interface TopNavProps {
   stats?: QueueStats;
   serverOnline: boolean;
   onOpenSync: () => void;
+  onOpenQuickIngest: () => void;
   onRefresh: () => void;
   isRefreshing: boolean;
   activeProjectTitle?: string;
@@ -25,6 +26,7 @@ export const TopNav: React.FC<TopNavProps> = ({
   stats,
   serverOnline,
   onOpenSync,
+  onOpenQuickIngest,
   onRefresh,
   isRefreshing,
   activeProjectTitle,
@@ -107,11 +109,22 @@ export const TopNav: React.FC<TopNavProps> = ({
           <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
         </button>
 
+        {/* Quick Ingest Single Project Button */}
+        <button
+          type="button"
+          onClick={onOpenQuickIngest}
+          className="px-3 py-1.5 rounded-md bg-canvas-card border border-border-subtle text-xs font-semibold text-content-primary hover:bg-brand-orange hover:text-white hover:border-brand-orange flex items-center gap-1.5 transition-colors cursor-pointer shadow-sm"
+          title="Quick Ingest Single Submission JSON"
+        >
+          <Zap className="w-3.5 h-3.5 text-brand-orange hover:text-white" />
+          <span>Quick Ingest</span>
+        </button>
+
         {/* Sync Submissions Dump Button */}
         <button
           type="button"
           onClick={onOpenSync}
-          className="px-3 py-1.5 rounded-md bg-canvas-card border border-border-subtle text-xs font-medium text-content-secondary hover:text-content-primary hover:bg-canvas-hover flex items-center gap-1.5 transition-colors"
+          className="px-3 py-1.5 rounded-md bg-canvas-card border border-border-subtle text-xs font-medium text-content-secondary hover:text-content-primary hover:bg-canvas-hover flex items-center gap-1.5 transition-colors cursor-pointer"
         >
           <Upload className="w-3 h-3 text-brand-orange" />
           <span>Sync Dump</span>

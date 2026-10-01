@@ -837,6 +837,23 @@ export async function syncProjectsFromLive(dump: any): Promise<{
   return res.json();
 }
 
+export async function quickIngestSingleProject(payload: any): Promise<{
+  ok: boolean;
+  project: CockpitProject;
+  stats: QueueStats;
+}> {
+  const res = await fetch('/api/projects/quick-ingest', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(err.error || 'Failed to ingest single project');
+  }
+  return res.json();
+}
+
 export async function saveProjectNote(
   id: string,
   note: string,

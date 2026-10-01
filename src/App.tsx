@@ -19,6 +19,7 @@ import { QueuePage } from './components/pages/QueuePage';
 import { ReviewPage, ReviewStep } from './components/pages/ReviewPage';
 import { AdminDeskPage } from './components/pages/AdminDeskPage';
 import { SyncModal } from './components/SyncModal';
+import { QuickIngestModal } from './components/QuickIngestModal';
 
 export const App: React.FC = () => {
   const [currentPage, setCurrentPage] = useState<AppPage>('queue');
@@ -41,8 +42,9 @@ export const App: React.FC = () => {
   // Active Queue Status (for maintaining queue context across reviews and next/prev navigation)
   const [activeQueueStatus, setActiveQueueStatus] = useState<string>('pending');
 
-  // Sync Modal
+  // Sync & Ingest Modals
   const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
+  const [isQuickIngestOpen, setIsQuickIngestOpen] = useState(false);
 
   // URL Synchronization helper
   const updateUrl = useCallback(
@@ -441,6 +443,7 @@ export const App: React.FC = () => {
         stats={stats}
         serverOnline={serverOnline}
         onOpenSync={() => setIsSyncModalOpen(true)}
+        onOpenQuickIngest={() => setIsQuickIngestOpen(true)}
         onRefresh={() => {
           setIsRefreshing(true);
           loadProjects();
@@ -507,6 +510,27 @@ export const App: React.FC = () => {
           setIsSyncModalOpen(false);
           loadProjects();
           toast.success('Live submissions ingested!');
+        }}
+      />
+
+      {/* Quick Single Project Ingest Modal */}
+      <QuickIngestModal
+        open={isQuickIngestOpen}
+        onOpenChange={setIsQuickIngestOpen}
+        onSuccess={(ingestedProject) => {
+          setIsQuickIngestOpen(false);
+          setProjects((prev) => {
+            const exists = prev.some((p) => p.id === ingestedProject.id);
+            if (exists) {
+              return prev.map((p) => (p.id === ingestedProject.id ? ingestedProject : p));
+            }
+            return [ingestedProject, ...prev];
+          });
+          loadProjects();
+          handleStartReview(ingestedProject, {
+            status: 'pending',
+            track: ingestedProject.projectType || 'software',
+          });
         }}
       />
 

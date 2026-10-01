@@ -20,6 +20,7 @@ data/*.py
 data/*.md
 *.html
 !index.html
+!extension/*.html
 
 # Editor directories and files
 .vscode/*

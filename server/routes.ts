@@ -319,6 +319,61 @@ apiRouter.post("/sync/projects", async (req, res) => {
 });
 
 // -------------------------------------------------------------
+// 1b. QUICK INGEST SINGLE PROJECT: Ingest a single project JSON
+// -------------------------------------------------------------
+apiRouter.post("/projects/quick-ingest", async (req, res) => {
+  try {
+    let raw = req.body;
+    if (Array.isArray(raw)) {
+      if (raw.length === 0) {
+        res.status(400).json({ error: "Empty array provided. Please provide a project JSON object." });
+        return;
+      }
+      raw = raw[0];
+    } else if (raw && raw.records && Array.isArray(raw.records) && raw.records.length > 0) {
+      raw = raw.records[0];
+    }
+
+    if (!raw || typeof raw !== "object") {
+      res.status(400).json({ error: "Invalid payload. Expected a JSON object for a single project." });
+      return;
+    }
+
+    // Ensure record ID exists or generate fallback
+    const recordId = String(raw.id || raw.liveRecordId || raw.fields?.id || "").trim() ||
+      `rec_quick_${Date.now().toString(36)}`;
+    raw.id = recordId;
+
+    const existing = storage.getProject(recordId);
+    let project = normalizeLiveSubmission(raw, existing);
+
+    // Explicit user mandate: "it adds it to pending automatically"
+    project.cockpitStatus = "pending";
+
+    if (existing) {
+      const diffs = computeProjectDiffs(existing, project);
+      project.version = existing.version + 1;
+      project.changeCount = existing.changeCount + (diffs.length || 1);
+      project.firstSyncedAt = existing.firstSyncedAt;
+      await storage.saveProject(project);
+      await logProjectUpdated(project, diffs.length > 0 ? diffs : ["Quick re-ingested single project as pending"], "quick_single_ingest");
+    } else {
+      await storage.saveProject(project);
+      await logProjectCreated(project, "quick_single_ingest");
+    }
+
+    res.json({
+      ok: true,
+      project,
+      stats: storage.getStats(),
+    });
+  } catch (err: any) {
+    console.error("Error in /api/projects/quick-ingest:", err);
+    res.status(500).json({ error: err.message || "Failed to quick-ingest project" });
+  }
+});
+
+// -------------------------------------------------------------
 // 2. QUEUE LIST: Fetch all projects with filter & stats
 // -------------------------------------------------------------
 apiRouter.get("/projects", (req, res) => {
