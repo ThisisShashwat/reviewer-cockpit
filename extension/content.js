@@ -7,6 +7,11 @@
 (function () {
   'use strict';
 
+  // Early exit guard: Only run on hackclub.com and airtable.com
+  if (!window.location.hostname.includes('hackclub.com') && !window.location.hostname.includes('airtable.com')) {
+    return;
+  }
+
   const DEFAULT_SERVER_URL = 'http://100.68.188.57:3001';
 
   // Hardware classification keywords
@@ -18,55 +23,73 @@
     'printables.com', 'tinkercad', 'devboard', 'firmware', 'flight controller'
   ];
 
+  const HW_REGEX = new RegExp('\\b(' + HW_KEYWORDS.map(kw => kw.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')).join('|') + ')\\b', 'i');
+
   // Cache Next.js hydration data if present in page scripts
   let pageHydrationRows = null;
-  let rowsByCodeUrl = new Map();
-  let rowsByHackatime = new Map();
+  const rowsByCodeUrl = new Map();
+  const rowsByHackatime = new Map();
+  let hasScannedHydration = false;
 
+  /**
+   * Scan Next.js hydration data exactly once without catastrophic regex backtracking
+   */
   function scanHydrationData() {
-    if (pageHydrationRows) return;
+    if (hasScannedHydration) return;
+    hasScannedHydration = true;
+
     try {
       const scripts = document.querySelectorAll('script');
       for (const s of scripts) {
-        const text = s.textContent || '';
-        if (text.includes('__next_f') || text.includes('"rows":[')) {
-          // Look for pushed rows
-          const matches = text.matchAll(/self\.__next_f\.push\(\[1,\s*"((?:\\.|[^"\\])*)"\]\)/g);
-          let fullStr = '';
-          for (const m of matches) {
-            try {
-              fullStr += JSON.parse('"' + m[1] + '"');
-            } catch (e) {}
+        const text = s.textContent;
+        if (!text) continue;
+
+        let idx = text.indexOf('"rows":[');
+        let isEscaped = false;
+
+        if (idx === -1) {
+          idx = text.indexOf('\\"rows\\":[');
+          if (idx !== -1) {
+            isEscaped = true;
           }
-          if (!fullStr && text.includes('"rows":[')) {
-            fullStr = text;
+        }
+
+        if (idx === -1) continue;
+
+        const marker = isEscaped ? '\\"rows\\":[' : '"rows":[';
+        const start = idx + marker.length - 1; // index of '['
+
+        let depth = 0;
+        let end = -1;
+        for (let i = start; i < text.length; i++) {
+          if (text[i] === '[') depth++;
+          else if (text[i] === ']') {
+            depth--;
+            if (depth === 0) {
+              end = i + 1;
+              break;
+            }
+          }
+        }
+
+        if (end !== -1) {
+          let rowsJson = text.substring(start, end);
+          if (isEscaped) {
+            rowsJson = rowsJson.replace(/\\"/g, '"').replace(/\\\\/g, '\\');
           }
 
-          const idx = fullStr.indexOf('"rows":[');
-          if (idx !== -1) {
-            // Find balanced array
-            let start = idx + '"rows":'.length;
-            let depth = 0;
-            let end = -1;
-            for (let i = start; i < fullStr.length; i++) {
-              if (fullStr[i] === '[') depth++;
-              else if (fullStr[i] === ']') {
-                depth--;
-                if (depth === 0) {
-                  end = i + 1;
-                  break;
-                }
-              }
-            }
-            if (end !== -1) {
-              const rowsJson = fullStr.substring(start, end);
-              pageHydrationRows = JSON.parse(rowsJson);
+          try {
+            const parsed = JSON.parse(rowsJson);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              pageHydrationRows = parsed;
               for (const r of pageHydrationRows) {
-                if (r.codeUrl) rowsByCodeUrl.set(r.codeUrl.trim().toLowerCase(), r);
+                if (r.codeUrl) rowsByCodeUrl.set(String(r.codeUrl).trim().toLowerCase(), r);
                 if (r.hackatimeId) rowsByHackatime.set(String(r.hackatimeId).trim(), r);
               }
               break;
             }
+          } catch (_) {
+            // Ignore parse errors on partial script contents
           }
         }
       }
@@ -109,14 +132,7 @@
   // Classify project type
   function detectProjectType(text) {
     if (!text) return 'software';
-    const lower = text.toLowerCase();
-    for (const kw of HW_KEYWORDS) {
-      const regex = new RegExp(`\\b${kw.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}\\b`, 'i');
-      if (regex.test(lower)) {
-        return 'hardware';
-      }
-    }
-    return 'software';
+    return HW_REGEX.test(text) ? 'hardware' : 'software';
   }
 
   function hashCode(str) {
@@ -300,7 +316,12 @@
 
     // 2. DOM fallback
     const cards = Array.from(document.querySelectorAll('.card, [class*="card"]'))
-      .filter((c) => c.querySelector('a, img, p'));
+      .filter((c) => {
+        if (c.closest && (c.closest('#cockpit-top-toolbar') || c.closest('[class*="cockpit-"]'))) {
+          return false;
+        }
+        return c.querySelector('a, img, p');
+      });
 
     const results = [];
     const seenIds = new Set();
@@ -402,14 +423,12 @@
   /**
    * Top Floating Toolbar for Full-Queue Sync
    */
-  async function injectTopToolbar() {
+  function injectTopToolbar() {
     if (document.getElementById('cockpit-top-toolbar')) return;
 
     const toolbar = document.createElement('div');
     toolbar.id = 'cockpit-top-toolbar';
     toolbar.className = 'cockpit-top-toolbar';
-
-    const currentServerUrl = await getStoredServerUrl();
 
     toolbar.innerHTML = `
       <div class="cockpit-tb-left">
@@ -435,13 +454,24 @@
       <div class="cockpit-tb-settings-panel" id="cockpit-settings-panel" style="display: none;">
         <label>Cockpit Server URL:</label>
         <div class="cockpit-tb-input-group">
-          <input type="text" id="cockpit-server-url-input" value="${currentServerUrl}" placeholder="http://100.68.188.57:3001" />
+          <input type="text" id="cockpit-server-url-input" value="${DEFAULT_SERVER_URL}" placeholder="http://100.68.188.57:3001" />
           <button type="button" id="cockpit-save-url-btn">Save</button>
         </div>
       </div>
     `;
 
-    document.body.appendChild(toolbar);
+    const mount = document.body || document.documentElement;
+    if (mount) {
+      mount.appendChild(toolbar);
+    }
+
+    // Asynchronously update server URL from storage
+    getStoredServerUrl().then((serverUrl) => {
+      const input = toolbar.querySelector('#cockpit-server-url-input');
+      if (input && serverUrl) {
+        input.value = serverUrl;
+      }
+    });
 
     // Event: Settings toggle
     const toggleBtn = toolbar.querySelector('#cockpit-settings-toggle');
@@ -551,44 +581,129 @@
 
   function updateBadgeCount() {
     const badge = document.getElementById('cockpit-tb-count');
-    if (badge) {
-      const projects = getAllProjectsFromPage();
-      badge.textContent = `${projects.length} found`;
+    if (!badge) return;
+
+    if (pageHydrationRows && pageHydrationRows.length > 0) {
+      badge.textContent = `${pageHydrationRows.length} found`;
+    } else {
+      const count = document.querySelectorAll('.card, [class*="card"]').length;
+      badge.textContent = `${count} found`;
     }
   }
+
+  let isInjecting = false;
 
   /**
-   * Scan DOM for submission cards
+   * Scan DOM for submission cards safely and idempotently
    */
   function scanAndInject() {
-    scanHydrationData();
-    injectTopToolbar();
-    updateBadgeCount();
+    if (isInjecting) return;
+    isInjecting = true;
 
-    const queueCards = document.querySelectorAll('.card, [class*="card"]');
-    for (const card of queueCards) {
-      if (card.querySelector('a, img, p') && !card.dataset.cockpitInjected) {
-        injectIntoCard(card);
+    try {
+      scanHydrationData();
+      injectTopToolbar();
+      updateBadgeCount();
+
+      const unInjectedCards = document.querySelectorAll(
+        '.card:not([data-cockpit-injected="true"]), [class*="card"]:not([data-cockpit-injected="true"])'
+      );
+
+      for (const card of unInjectedCards) {
+        // Skip toolbar or elements inside cockpit UI
+        if (card.closest && (card.closest('#cockpit-top-toolbar') || card.closest('[class*="cockpit-"]'))) {
+          continue;
+        }
+        if (card.querySelector('a, img, p')) {
+          injectIntoCard(card);
+        }
       }
+    } catch (err) {
+      console.debug('[Cockpit Ingest] Error during scanAndInject:', err);
+    } finally {
+      isInjecting = false;
     }
   }
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', scanAndInject);
-  } else {
-    scanAndInject();
+  let debounceTimer = null;
+  function debouncedScanAndInject() {
+    if (debounceTimer) {
+      clearTimeout(debounceTimer);
+    }
+    debounceTimer = setTimeout(() => {
+      debounceTimer = null;
+      scanAndInject();
+    }, 300);
   }
 
-  const observer = new MutationObserver(() => {
-    scanAndInject();
+  // Initial trigger
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', debouncedScanAndInject);
+  } else {
+    debouncedScanAndInject();
+  }
+
+  // Safe MutationObserver ignoring own injections
+  const observer = new MutationObserver((mutations) => {
+    if (isInjecting) return;
+
+    let shouldScan = false;
+    for (const mutation of mutations) {
+      const target = mutation.target;
+
+      // Ignore mutations originating from cockpit UI
+      if (target) {
+        const el = target.nodeType === Node.ELEMENT_NODE ? target : target.parentElement;
+        if (el?.closest && (el.closest('#cockpit-top-toolbar') || el.closest('[class*="cockpit-"]'))) {
+          continue;
+        }
+      }
+
+      // Check added nodes: ignore if only cockpit elements were added
+      if (mutation.addedNodes && mutation.addedNodes.length > 0) {
+        let onlyCockpit = true;
+        for (const node of mutation.addedNodes) {
+          if (node.nodeType === Node.ELEMENT_NODE) {
+            if (node.id === 'cockpit-top-toolbar' ||
+                (node.className && typeof node.className === 'string' && node.className.includes('cockpit-')) ||
+                (node.dataset && node.dataset.cockpitInjected)) {
+              continue;
+            }
+          }
+          onlyCockpit = false;
+          break;
+        }
+        if (onlyCockpit) {
+          continue;
+        }
+      }
+
+      shouldScan = true;
+      break;
+    }
+
+    if (shouldScan) {
+      debouncedScanAndInject();
+    }
   });
 
-  observer.observe(document.body || document.documentElement, {
-    childList: true,
-    subtree: true,
-  });
+  const targetNode = document.body || document.documentElement;
+  if (targetNode) {
+    observer.observe(targetNode, {
+      childList: true,
+      subtree: true,
+    });
+  } else {
+    document.addEventListener('DOMContentLoaded', () => {
+      observer.observe(document.body || document.documentElement, {
+        childList: true,
+        subtree: true,
+      });
+    });
+  }
 
-  setInterval(scanAndInject, 1500);
+  // Safe fallback polling at 5000ms instead of aggressive 1500ms
+  setInterval(debouncedScanAndInject, 5000);
 
   console.log('[Cockpit Ingest Helper] Active with Full-Queue Sync & Quick Ingest.');
 })();

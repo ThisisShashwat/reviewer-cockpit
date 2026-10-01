@@ -13,7 +13,6 @@
     "*://live.hackclub.com/*",
     "*://*.hackclub.com/*",
     "*://*.airtable.com/*",
-    "file://*/*",
     "*://localhost/*",
     "*://localhost:*/*",
     "*://127.0.0.1/*",
@@ -21,17 +20,14 @@
     "*://192.168.*.*/*",
     "*://192.168.*.*:*/*",
     "*://100.*.*.*/*",
-    "*://100.*.*.*:*/*",
-    "<all_urls>"
+    "*://100.*.*.*:*/*"
   ],
   "content_scripts": [
     {
       "matches": [
         "*://live.hackclub.com/*",
         "*://*.hackclub.com/*",
-        "*://*.airtable.com/*",
-        "file://*/*",
-        "<all_urls>"
+        "*://*.airtable.com/*"
       ],
       "js": [
         "content.js"
