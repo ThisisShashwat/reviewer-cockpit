@@ -1,0 +1,31 @@
+[
+  {
+    "id": "rec_demo_reviewer_cockpit",
+    "liveRecordId": "rec_demo_reviewer_cockpit",
+    "projectName": "Live Reviewer Cockpit",
+    "projectType": "software",
+    "codeUrl": "https://github.com/ThisisShashwat/reviewer-cockpit",
+    "allCodeUrls": [
+      "https://github.com/ThisisShashwat/reviewer-cockpit"
+    ],
+    "playableUrl": "https://thisisshashwat.github.io/reviewer-cockpit/",
+    "allPlayableUrls": [
+      "https://thisisshashwat.github.io/reviewer-cockpit/"
+    ],
+    "description": "High-throughput triage and forensic auditing workstation for Hack Club Horizons submissions. Includes multi-stage verification workflows, commit progression inspection, and audit-compliant justifications.",
+    "githubUsername": "ThisisShashwat",
+    "submittedHours": 15,
+    "hackatimeId": "shashwat",
+    "hackatimeProjects": "reviewer-cockpit",
+    "lapseLinks": [],
+    "liveApproved": false,
+    "liveReviewStatus": "Pending",
+    "cockpitStatus": "pending",
+    "submittedAt": "2026-10-02T12:00:00.000Z",
+    "firstSyncedAt": "2026-10-02T12:00:00.000Z",
+    "lastSyncedAt": "2026-10-02T12:00:00.000Z",
+    "updatedAt": "2026-10-02T12:00:00.000Z",
+    "version": 1,
+    "changeCount": 0
+  }
+]
