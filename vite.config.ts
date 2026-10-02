@@ -2,7 +2,8 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
 // https://vitejs.dev/config/
-export default defineConfig({
+export default defineConfig(({ command }) => ({
+  base: process.env.VITE_BASE_PATH || (command === 'build' ? '/reviewer-cockpit/' : '/'),
   plugins: [react()],
   server: {
     host: '0.0.0.0',
@@ -22,4 +23,4 @@ export default defineConfig({
     allowedHosts: true,
     cors: true,
   },
-});
+}));

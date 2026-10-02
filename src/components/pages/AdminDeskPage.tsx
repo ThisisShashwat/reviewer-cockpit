@@ -7,9 +7,10 @@ import {
   Clock,
   ArrowLeft,
   RefreshCw,
+  Download,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { fetchPreapprovedQueue } from '../../lib/api';
+import { fetchPreapprovedQueue, exportClientDataJson } from '../../lib/api';
 import { PreapprovedExportItem } from '../../lib/types';
 
 interface AdminDeskPageProps {
@@ -71,15 +72,27 @@ export const AdminDeskPage: React.FC<AdminDeskPageProps> = ({ onBackToQueue }) =
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={loadData}
-            disabled={isLoading}
-            className="px-3.5 py-1.5 rounded-lg bg-canvas-card border border-border-subtle text-xs font-medium text-content-secondary hover:text-content-primary hover:bg-canvas-hover flex items-center gap-1.5 transition-colors"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
-            <span>Refresh Desk</span>
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={exportClientDataJson}
+              className="px-3.5 py-1.5 rounded-lg bg-canvas-card border border-border-subtle text-xs font-semibold text-content-primary hover:bg-brand-orange hover:text-white hover:border-brand-orange flex items-center gap-1.5 transition-colors cursor-pointer shadow-sm"
+              title="Download full JSON backup of all submissions, verdicts, and audit logs"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Export Backup (JSON)</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={loadData}
+              disabled={isLoading}
+              className="px-3.5 py-1.5 rounded-lg bg-canvas-card border border-border-subtle text-xs font-medium text-content-secondary hover:text-content-primary hover:bg-canvas-hover flex items-center gap-1.5 transition-colors"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+              <span>Refresh Desk</span>
+            </button>
+          </div>
         </div>
       </div>
 

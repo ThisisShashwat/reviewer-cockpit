@@ -23,6 +23,21 @@ import {
   GitHubUserRepo,
   UserNote,
 } from './types';
+import {
+  clientGetProjects,
+  clientGetProject,
+  clientSubmitVerdict,
+  clientMarkCompletedPreApproved,
+  clientGetPreapprovedQueue,
+  clientQuickIngest,
+  clientSaveProjectNote,
+  clientSaveUserNote,
+  clientFetchUserNotes,
+  exportClientDataJson,
+} from './clientStorage';
+
+export { exportClientDataJson };
+
 
 /**
  * GitHub API Token & Rate-Limiting Management
@@ -33,18 +48,14 @@ const commitDetailCache = new Map<string, any>();
 
 let lastRateLimitInfo: { limit: number; remaining: number; reset: number } | null = null;
 
-export const DEFAULT_GITHUB_TOKEN =
-  (import.meta.env.VITE_GITHUB_TOKEN as string) || '';
-
 export function getGitHubToken(): string | null {
   if (typeof window !== 'undefined') {
     const stored = localStorage.getItem('HC_GITHUB_TOKEN');
     if (stored && stored.trim().length > 0) {
       return stored.trim();
     }
-    return DEFAULT_GITHUB_TOKEN;
   }
-  return DEFAULT_GITHUB_TOKEN;
+  return null;
 }
 
 export function setGitHubToken(token: string | null) {
@@ -733,14 +744,21 @@ export async function fetchCockpitProjects(filters?: {
   type?: string;
   search?: string;
 }): Promise<{ projects: CockpitProject[]; stats: QueueStats }> {
-  const params = new URLSearchParams();
-  if (filters?.status && filters.status !== 'all') params.set('status', filters.status);
-  if (filters?.type && filters.type !== 'all') params.set('type', filters.type);
-  if (filters?.search) params.set('search', filters.search);
+  try {
+    const params = new URLSearchParams();
+    if (filters?.status && filters.status !== 'all') params.set('status', filters.status);
+    if (filters?.type && filters.type !== 'all') params.set('type', filters.type);
+    if (filters?.search) params.set('search', filters.search);
 
-  const res = await fetch(`/api/projects?${params.toString()}`);
-  if (!res.ok) throw new Error(`Failed to fetch projects: ${res.statusText}`);
-  return res.json();
+    const res = await fetch(`/api/projects?${params.toString()}`);
+    if (res.ok) {
+      return await res.json();
+    }
+  } catch {
+    // Backend offline or running on static hosting (GitHub Pages)
+  }
+
+  return await clientGetProjects(filters);
 }
 
 export async function fetchCockpitProject(id: string): Promise<{
@@ -748,9 +766,16 @@ export async function fetchCockpitProject(id: string): Promise<{
   auditHistory: AuditLogEntry[];
   verdict?: VerdictDetails;
 }> {
-  const res = await fetch(`/api/projects/${encodeURIComponent(id)}`);
-  if (!res.ok) throw new Error(`Failed to fetch project ${id}: ${res.statusText}`);
-  return res.json();
+  try {
+    const res = await fetch(`/api/projects/${encodeURIComponent(id)}`);
+    if (res.ok) {
+      return await res.json();
+    }
+  } catch {
+    // Backend offline
+  }
+
+  return await clientGetProject(id);
 }
 
 export interface BackupInfo {
@@ -769,53 +794,77 @@ export async function submitCockpitVerdict(
   stats: QueueStats;
   backupInfo?: BackupInfo;
 }> {
-  const res = await fetch('/api/verdicts', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(err.error || 'Failed to submit verdict');
+  try {
+    const res = await fetch('/api/verdicts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (res.ok) {
+      return await res.json();
+    }
+  } catch {
+    // Backend offline
   }
-  return res.json();
+
+  return await clientSubmitVerdict(payload);
 }
 
 export async function fetchBackupsList(): Promise<{
   ok: boolean;
   backups: Array<{ filename: string; size: number; createdAt: string; milestone?: number }>;
 }> {
-  const res = await fetch('/api/backups');
-  if (!res.ok) throw new Error('Failed to fetch backups');
-  return res.json();
+  try {
+    const res = await fetch('/api/backups');
+    if (res.ok) return await res.json();
+  } catch {
+    // Backend offline
+  }
+  return { ok: true, backups: [] };
 }
 
 export async function triggerManualBackup(): Promise<{ ok: boolean; backup: { filename: string; filePath: string } }> {
-  const res = await fetch('/api/backups/create', { method: 'POST' });
-  if (!res.ok) throw new Error('Failed to create backup');
-  return res.json();
+  try {
+    const res = await fetch('/api/backups/create', { method: 'POST' });
+    if (res.ok) return await res.json();
+  } catch {
+    // Backend offline
+  }
+  exportClientDataJson();
+  return { ok: true, backup: { filename: 'browser_export.json', filePath: 'download' } };
 }
 
 export async function markProjectCompletedPreApproved(
   projectId: string
 ): Promise<{ ok: boolean; project: CockpitProject; stats: QueueStats }> {
-  const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/complete-preapproval`, {
-    method: 'POST',
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(err.error || 'Failed to mark project as completed');
+  try {
+    const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/complete-preapproval`, {
+      method: 'POST',
+    });
+    if (res.ok) {
+      return await res.json();
+    }
+  } catch {
+    // Backend offline
   }
-  return res.json();
+
+  return await clientMarkCompletedPreApproved(projectId);
 }
 
 export async function fetchPreapprovedQueue(): Promise<{
   items: PreapprovedExportItem[];
   count: number;
 }> {
-  const res = await fetch('/api/preapproved');
-  if (!res.ok) throw new Error(`Failed to fetch pre-approved queue: ${res.statusText}`);
-  return res.json();
+  try {
+    const res = await fetch('/api/preapproved');
+    if (res.ok) {
+      return await res.json();
+    }
+  } catch {
+    // Backend offline
+  }
+
+  return await clientGetPreapprovedQueue();
 }
 
 export async function syncProjectsFromLive(dump: any): Promise<{
@@ -825,16 +874,19 @@ export async function syncProjectsFromLive(dump: any): Promise<{
   updated: number;
   unchanged: number;
 }> {
-  const res = await fetch('/api/sync/projects', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(dump),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(err.error || 'Failed to sync projects');
+  try {
+    const res = await fetch('/api/sync/projects', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(dump),
+    });
+    if (res.ok) {
+      return await res.json();
+    }
+  } catch {
+    // Backend offline
   }
-  return res.json();
+  return { ok: true, processed: 0, created: 0, updated: 0, unchanged: 0 };
 }
 
 export async function quickIngestSingleProject(payload: any): Promise<{
@@ -842,16 +894,20 @@ export async function quickIngestSingleProject(payload: any): Promise<{
   project: CockpitProject;
   stats: QueueStats;
 }> {
-  const res = await fetch('/api/projects/quick-ingest', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(err.error || 'Failed to ingest single project');
+  try {
+    const res = await fetch('/api/projects/quick-ingest', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (res.ok) {
+      return await res.json();
+    }
+  } catch {
+    // Backend offline
   }
-  return res.json();
+
+  return await clientQuickIngest(payload);
 }
 
 export async function saveProjectNote(
@@ -859,19 +915,34 @@ export async function saveProjectNote(
   note: string,
   actor = 'reviewer'
 ): Promise<{ ok: boolean; entry: AuditLogEntry }> {
-  const res = await fetch(`/api/projects/${encodeURIComponent(id)}/notes`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ note, actor }),
-  });
-  if (!res.ok) throw new Error(`Failed to save note: ${res.statusText}`);
-  return res.json();
+  try {
+    const res = await fetch(`/api/projects/${encodeURIComponent(id)}/notes`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ note, actor }),
+    });
+    if (res.ok) {
+      return await res.json();
+    }
+  } catch {
+    // Backend offline
+  }
+
+  return await clientSaveProjectNote(id, note, actor);
 }
 
 export async function fetchCockpitStats(): Promise<QueueStats> {
-  const res = await fetch('/api/stats');
-  if (!res.ok) throw new Error(`Failed to fetch stats: ${res.statusText}`);
-  return res.json();
+  try {
+    const res = await fetch('/api/stats');
+    if (res.ok) {
+      return await res.json();
+    }
+  } catch {
+    // Backend offline
+  }
+
+  const { stats } = await clientGetProjects();
+  return stats;
 }
 
 /**
@@ -942,12 +1013,15 @@ export async function fetchUserNotes(username: string): Promise<UserNote[]> {
   if (!clean) return [];
   try {
     const res = await fetch(`/api/users/${encodeURIComponent(clean)}/notes`);
-    if (!res.ok) return [];
-    const json = await res.json();
-    return json.notes || [];
+    if (res.ok) {
+      const json = await res.json();
+      return json.notes || [];
+    }
   } catch {
-    return [];
+    // Backend offline
   }
+
+  return await clientFetchUserNotes(clean);
 }
 
 /**
@@ -966,12 +1040,16 @@ export async function saveUserNote(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text: text.trim(), author }),
     });
-    if (!res.ok) return null;
-    const json = await res.json();
-    return json.note || null;
+    if (res.ok) {
+      const json = await res.json();
+      return json.note || null;
+    }
   } catch {
-    return null;
+    // Backend offline
   }
+
+  const res = await clientSaveUserNote(clean, text, author);
+  return res.note;
 }
 
 /**
@@ -991,14 +1069,16 @@ export async function generateAiSearchQuery(params: {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(params),
     });
-    if (!res.ok) {
-      throw new Error(`AI proxy returned HTTP ${res.status}`);
+    if (res.ok) {
+      const data = await res.json();
+      return data.query || `${params.projectName} tutorial`;
     }
-    const data = await res.json();
-    return data.query || `${params.projectName} tutorial`;
-  } catch (err) {
-    console.error('Failed to generate AI search query:', err);
-    throw err;
+  } catch {
+    // Backend offline
   }
+
+  // Standalone client fallback heuristic
+  const lang = params.language ? ` ${params.language}` : '';
+  return `"${params.projectName}"${lang} tutorial OR clone OR template`;
 }
 

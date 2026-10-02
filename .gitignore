@@ -15,6 +15,7 @@ dist-ssr
 data/*.json
 data/**/*.json
 !data/seed.json
+!public/data/*.json
 data/*.html
 data/*.py
 data/*.md

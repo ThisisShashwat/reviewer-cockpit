@@ -83,18 +83,22 @@ export const TopNav: React.FC<TopNavProps> = ({
 
       {/* Right Controls */}
       <div className="flex items-center gap-3">
-        {/* Server Status Pill */}
+        {/* Server / Storage Mode Pill */}
         <div
-          className="flex items-center gap-1.5 text-xs text-content-tertiary"
-          title={serverOnline ? 'Connected to local Cockpit server (port 3001)' : 'Server disconnected'}
+          className="flex items-center gap-1.5 text-xs text-content-tertiary px-2 py-0.5 rounded bg-canvas-card border border-border-subtle"
+          title={
+            serverOnline
+              ? 'Connected to local Cockpit server (port 3001)'
+              : 'Running in standalone mode on GitHub Pages. Reviews and verdicts are saved directly to browser storage.'
+          }
         >
           <span
             className={`w-2 h-2 rounded-full ${
-              serverOnline ? 'bg-emerald-500' : 'bg-red-500'
+              serverOnline ? 'bg-emerald-500' : 'bg-sky-500'
             }`}
           />
-          <span className="text-[12px] font-mono hidden sm:inline">
-            {serverOnline ? 'Online' : 'Offline'}
+          <span className="text-[11px] font-mono hidden sm:inline">
+            {serverOnline ? 'Server: 3001' : 'GitHub Pages'}
           </span>
         </div>
 
